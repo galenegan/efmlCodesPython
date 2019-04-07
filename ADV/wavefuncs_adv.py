@@ -2,6 +2,12 @@
 mostly on code written by Falk Feddersen and Justin Rogers, translated
 into Python by Galen Egan. YW and phase method code written by Galen Egan"""
 
+import os
+parentDir = os.path.abspath(os.path.join(os.getcwd(), os.pardir))
+
+import sys
+sys.path.append(parentDir + '/General/')
+
 import copy
 from mylib import naninterp
 import numpy as np

@@ -6,12 +6,17 @@ Created on Tue May  1 12:18:40 2018
 @author: gegan
 """
 #Packages
+import os
+parentDir = os.path.abspath(os.path.join(os.getcwd(), os.pardir))
+
+import sys
+sys.path.append(parentDir + '/General/')
+
 import advfuncs
 import datetime
 import glob
 from mylib import naninterp
 import numpy as np
-import os
 import scipy.interpolate
 import scipy.signal as sig
 import scipy.io as sio

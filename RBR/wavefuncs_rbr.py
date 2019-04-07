@@ -8,8 +8,11 @@ Created on Mon May  7 11:47:07 2018
 
 """Functions for calculating wave spectra and other wave statistics. Based
 mostly on MATLAB code written by Falk Feddersen and Justin Rogers"""
+import os
+parentDir = os.path.abspath(os.path.join(os.getcwd(), os.pardir))
+
 import sys
-sys.path.append('../General/')
+sys.path.append(parentDir + '/General/')
 
 import copy
 from mylib import naninterp

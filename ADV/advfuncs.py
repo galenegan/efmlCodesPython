@@ -5,6 +5,12 @@ Created on Wed May  2 13:33:25 2018
 
 @author: gegan
 """
+import os
+parentDir = os.path.abspath(os.path.join(os.getcwd(), os.pardir))
+
+import sys
+sys.path.append(parentDir + '/General/')
+
 import copy
 from mylib import naninterp
 import numpy as np
