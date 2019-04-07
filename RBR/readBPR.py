@@ -22,4 +22,7 @@ the wave_stats_spectra function for each chunk like:
 
 wavestats = wavefuncs_rbr.wave_stats_spectra(press,depth,nfft,doffp,fs,fc,rho)
 
+Best way to do this might be to put the whole code in a loop and use the chunk_size
+option in pd.read_csv 
+
 ""
