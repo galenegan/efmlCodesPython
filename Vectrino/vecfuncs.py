@@ -6,25 +6,27 @@ Created on Sun May 13 16:41:08 2018
 """
 
 #Packages
+import os
+parentDir = os.path.abspath(os.path.join(os.getcwd(), os.pardir))
+
 import sys
-sys.path.append('/Users/gegan/Documents/Python/Research/General')
+sys.path.append(parentDir + '/General/')
 
 import copy
-import cmath
 from mylib import naninterp
 import numpy as np
 import scipy.optimize
 import scipy.io as sio
 import scipy.ndimage
 import scipy.signal as sig
-import lmfit.models
-import datetime
-import matplotlib.pyplot as plt
 from xcorr import xcorr
 from autocorr import autocorr
 
 
 def xyz_enu(vectrino_kk,heading,pitch,roll):
+    
+    """XYZ velocity data to ENU coordinates"""
+    
     CH = np.cos(np.radians(heading))
     SH = np.sin(np.radians(heading))
     CP = np.cos(np.radians(pitch))
@@ -55,6 +57,8 @@ def xyz_enu(vectrino_kk,heading,pitch,roll):
     return vectrino_kk
 
 def yw(u,v,w,p,fs):
+    
+    """Young and Webster (2018) wave-turbulence decomposition"""
     
     yw = dict()
     
@@ -137,6 +141,8 @@ def yw(u,v,w,p,fs):
 
 def lpf(arr_in,fs,fc):
     
+    """Fourier low-pass filter"""
+    
     arr = copy.deepcopy(arr_in)
     
     M,N = np.shape(arr)
@@ -176,6 +182,8 @@ def lpf(arr_in,fs,fc):
 
 def pa_theta(u,v):
     
+    """Finding angle of maximum variance"""
+    
     #Storing as complex variable w = u + iv
     w = u + 1j*v
     w = w[np.isfinite(w)]
@@ -189,6 +197,9 @@ def pa_theta(u,v):
     return theta
 
 def pa_rotation(u,v,theta):
+    
+    """Rotating onto principle axes"""
+    
     #Storing as complex variable w = u + iv
     w = u + 1j*v
     
@@ -199,6 +210,8 @@ def pa_rotation(u,v,theta):
     return vel_maj,vel_min
 
 def calculate_fft(x,nfft):
+    
+    """Custom fft"""
     
     X = copy.deepcopy(x)
     
@@ -247,280 +260,257 @@ def calculate_fft(x,nfft):
 
 def get_turb_waves(vectrino_kk,fs,method):
     
+    
+    """Bricker and Monismith (2007) wave-turbulence decomposition"""
+    
     waveturb = dict()
-    #Implement Bricker and Monismith method
-    if method == 'phase':
  
-        u = copy.deepcopy(vectrino_kk['velmaj'])
-        v = copy.deepcopy(vectrino_kk['velmin'])
-        w1 = copy.deepcopy(vectrino_kk['w1'])
-        w2 = copy.deepcopy(vectrino_kk['w2'])
+    u = copy.deepcopy(vectrino_kk['velmaj'])
+    v = copy.deepcopy(vectrino_kk['velmin'])
+    w1 = copy.deepcopy(vectrino_kk['w1'])
+    w2 = copy.deepcopy(vectrino_kk['w2'])
+    
+    m,n = np.shape(u)
+    
+    waveturb = dict()  
+    
+    #Turbulent reynolds stresses
+    waveturb['uw1'] = np.empty((m,))*np.NaN
+    waveturb['vw1'] = np.empty((m,))*np.NaN
+    waveturb['uw2'] = np.empty((m,))*np.NaN
+    waveturb['vw2'] = np.empty((m,))*np.NaN
+    waveturb['uv'] = np.empty((m,))*np.NaN
+    waveturb['uu'] = np.empty((m,))*np.NaN
+    waveturb['vv'] = np.empty((m,))*np.NaN
+    waveturb['w1w1'] = np.empty((m,))*np.NaN
+    waveturb['w2w2'] = np.empty((m,))*np.NaN
+    waveturb['w1w2'] = np.empty((m,))*np.NaN
+    
+    
+    #Wave reynolds stresses
+    waveturb['uw1_wave'] = np.empty((m,))*np.NaN
+    waveturb['vw1_wave'] = np.empty((m,))*np.NaN
+    waveturb['uw2_wave'] = np.empty((m,))*np.NaN
+    waveturb['vw2_wave'] = np.empty((m,))*np.NaN
+    waveturb['uv_wave'] = np.empty((m,))*np.NaN
+    waveturb['uu_wave'] = np.empty((m,))*np.NaN
+    waveturb['vv_wave'] = np.empty((m,))*np.NaN
+    waveturb['w1w1_wave'] = np.empty((m,))*np.NaN
+    waveturb['w2w2_wave'] = np.empty((m,))*np.NaN
+    waveturb['w1w2_wave'] = np.empty((m,))*np.NaN
+    
+    for jj in range(vectrino_kk['z'].size):
         
-        m,n = np.shape(u)
-        
-        waveturb = dict()  
-        
-        #Turbulent reynolds stresses
-        waveturb['uw1'] = np.empty((m,))*np.NaN
-        waveturb['vw1'] = np.empty((m,))*np.NaN
-        waveturb['uw2'] = np.empty((m,))*np.NaN
-        waveturb['vw2'] = np.empty((m,))*np.NaN
-        waveturb['uv'] = np.empty((m,))*np.NaN
-        waveturb['uu'] = np.empty((m,))*np.NaN
-        waveturb['vv'] = np.empty((m,))*np.NaN
-        waveturb['w1w1'] = np.empty((m,))*np.NaN
-        waveturb['w2w2'] = np.empty((m,))*np.NaN
-        waveturb['w1w2'] = np.empty((m,))*np.NaN
-        
-        
-        #Wave reynolds stresses
-        waveturb['uw1_wave'] = np.empty((m,))*np.NaN
-        waveturb['vw1_wave'] = np.empty((m,))*np.NaN
-        waveturb['uw2_wave'] = np.empty((m,))*np.NaN
-        waveturb['vw2_wave'] = np.empty((m,))*np.NaN
-        waveturb['uv_wave'] = np.empty((m,))*np.NaN
-        waveturb['uu_wave'] = np.empty((m,))*np.NaN
-        waveturb['vv_wave'] = np.empty((m,))*np.NaN
-        waveturb['w1w1_wave'] = np.empty((m,))*np.NaN
-        waveturb['w2w2_wave'] = np.empty((m,))*np.NaN
-        waveturb['w1w2_wave'] = np.empty((m,))*np.NaN
-        
-        for jj in range(vectrino_kk['z'].size):
+        if np.sum(np.isnan(u[jj,:])) < np.size(u[jj,:]/2):
             
-            if np.sum(np.isnan(u[jj,:])) < np.size(u[jj,:]/2):
+            #Amplitude
+            nfft = u[jj,:].size
+            Amu = calculate_fft(naninterp(u[jj,:]),nfft)
+            Amv = calculate_fft(naninterp(v[jj,:]),nfft)
+            Amw1 = calculate_fft(naninterp(w1[jj,:]),nfft)
+            Amw2 = calculate_fft(naninterp(w2[jj,:]),nfft)
             
-                nfft = u[jj,:].size
-                Amu = calculate_fft(naninterp(u[jj,:]),nfft)
-                Amv = calculate_fft(naninterp(v[jj,:]),nfft)
-                Amw1 = calculate_fft(naninterp(w1[jj,:]),nfft)
-                Amw2 = calculate_fft(naninterp(w2[jj,:]),nfft)
-                
-                df = fs/(nfft-1)
-                nnyq = int(np.floor(nfft/2 +1))
-                fm = np.arange(0,nnyq)*df
-       
-                #Phase
-                Uph = np.arctan2(np.imag(Amu),np.real(Amu)).squeeze()[:nnyq]
-                Vph = np.arctan2(np.imag(Amv),np.real(Amv)).squeeze()[:nnyq]
-                W1ph = np.arctan2(np.imag(Amw1),np.real(Amw1)).squeeze()[:nnyq]
-                W2ph = np.arctan2(np.imag(Amw2),np.real(Amw2)).squeeze()[:nnyq]
-                
-                #Computing the full spectra
+            df = fs/(nfft-1)
+            nnyq = int(np.floor(nfft/2 +1))
+            fm = np.arange(0,nnyq)*df
+   
+            #Phase
+            Uph = np.arctan2(np.imag(Amu),np.real(Amu)).squeeze()[:nnyq]
+            Vph = np.arctan2(np.imag(Amv),np.real(Amv)).squeeze()[:nnyq]
+            W1ph = np.arctan2(np.imag(Amw1),np.real(Amw1)).squeeze()[:nnyq]
+            W2ph = np.arctan2(np.imag(Amw2),np.real(Amw2)).squeeze()[:nnyq]
             
-                Suu = np.real(Amu*np.conj(Amu))/(nnyq*df)
-                Suu = Suu.squeeze()[:nnyq]
-                
-                Svv = np.real(Amv*np.conj(Amv))/(nnyq*df)
-                Svv = Svv.squeeze()[:nnyq]
-                
-                Sww1 = np.real(Amw1*np.conj(Amw1))/(nnyq*df)
-                Sww1 = Sww1.squeeze()[:nnyq]
-                
-                Sww2 = np.real(Amw2*np.conj(Amw2))/(nnyq*df)
-                Sww2 = Sww2.squeeze()[:nnyq]
-                
-                Suv = np.real(Amu*np.conj(Amv))/(nnyq*df)
-                Suv = Suv.squeeze()[:nnyq]
-                
-                Suw1 = np.real(Amu*np.conj(Amw1))/(nnyq*df)
-                Suw1 = Suw1.squeeze()[:nnyq]
-                
-                Suw2 = np.real(Amu*np.conj(Amw2))/(nnyq*df)
-                Suw2 = Suw2.squeeze()[:nnyq]
-                
-                Svw1 = np.real(Amv*np.conj(Amw1))/(nnyq*df)
-                Svw1 = Svw1.squeeze()[:nnyq]
-                
-                Svw2 = np.real(Amv*np.conj(Amw2))/(nnyq*df)
-                Svw2 = Svw2.squeeze()[:nnyq]
-                
-                Sw1w2 = np.real(Amw1*np.conj(Amw2))/(nnyq*df)
-                Sw1w2 = Sw1w2.squeeze()[:nnyq]
-                
-                
-                offset = np.sum(fm<=0.1)
-                
-                uumax = np.argmax(Suu[(fm>0.1) & (fm < 0.7)]) + offset
-                
-                #waverange = np.arange(uumax - 0.2//df,uumax + 1//df).astype(int)
-                widthratiolow = 2.333
-                widthratiohigh = 1.4
-                fmmax = fm[uumax]
-                waverange = np.arange(uumax - (fmmax/widthratiolow)//df,uumax + (fmmax/widthratiohigh)//df).astype(int)
-                
-                #interprange = np.arange(uumax-0.25//df,uumax+1.25//df).astype(int)
-                #interprange = np.arange(uumax- 0.2//df,uumax + .4//df).astype(int)
-                interprange = np.arange(1,np.nanargmin(np.abs(fm - 1))).astype(int)
-                
-                #interprangeW = np.arange(uumax - 0.25//df,uumax + 1.5//df).astype(int)
-                interprangeW = np.arange(1,np.nanargmin(np.abs(fm-1))).astype(int)
-                
-                interprange = interprange[(interprange>=0) & (interprange<nnyq)]
-                waverange = waverange[(waverange>=0) & (waverange<nnyq)]
-                interprangeW = interprangeW[(interprangeW >= 0) & (interprangeW < nnyq)]
-                
-                Suu_turb = Suu[interprange]
-                fmuu = fm[interprange]
-                Suu_turb = np.delete(Suu_turb,waverange-interprange[0])
-                fmuu = np.delete(fmuu,waverange-interprange[0])
-                Suu_turb = Suu_turb[fmuu>0]
-                fmuu = fmuu[fmuu>0]
-                
-                Svv_turb = Svv[interprange]
-                fmvv = fm[interprange]
-                Svv_turb = np.delete(Svv_turb,waverange-interprange[0])
-                fmvv = np.delete(fmvv,waverange-interprange[0])
-                Svv_turb = Svv_turb[fmvv>0]
-                fmvv = fmvv[fmvv>0]
-                
-#                Sww1_turb = Sww1[interprange]
-#                fmww1 = fm[interprange]
-#                Sww1_turb = np.delete(Sww1_turb,waverange-interprange[0])
-#                fmww1 = np.delete(fmww1,waverange-interprange[0])
-#                Sww1_turb = Sww1_turb[fmww1>0]
-#                fmww1 = fmww1[fmww1>0]
-#                
-#                Sww2_turb = Sww2[interprange]
-#                fmww2 = fm[interprange]
-#                Sww2_turb = np.delete(Sww2_turb,waverange-interprange[0])
-#                fmww2 = np.delete(fmww2,waverange-interprange[0])
-#                Sww2_turb = Sww2_turb[fmww2>0]
-#                fmww2 = fmww2[fmww2>0]
-                
-                Sww1_turb = Sww1[interprangeW]
-                fmww1 = fm[interprangeW]
-                Sww1_turb = np.delete(Sww1_turb,waverange-interprangeW[0])
-                fmww1 = np.delete(fmww1,waverange-interprangeW[0])
-                Sww1_turb = Sww1_turb[fmww1>0]
-                fmww1 = fmww1[fmww1>0]
-                
-                Sww2_turb = Sww2[interprangeW]
-                fmww2 = fm[interprangeW]
-                Sww2_turb = np.delete(Sww2_turb,waverange-interprangeW[0])
-                fmww2 = np.delete(fmww2,waverange-interprangeW[0])
-                Sww2_turb = Sww2_turb[fmww2>0]
-                fmww2 = fmww2[fmww2>0]
-                
-                #Linear interpolation over turbulent spectra
-                F = np.log(fmuu)
-                S = np.log(Suu_turb)
-                Puu = np.polyfit(F,S,deg = 1)
-                Puuhat = np.exp(np.polyval(Puu,np.log(fm)))
-                
-                F = np.log(fmvv)
-                S = np.log(Svv_turb)
-                Pvv = np.polyfit(F,S,deg = 1)
-                Pvvhat = np.exp(np.polyval(Pvv,np.log(fm)))
-                                          
-                F = np.log(fmww1)
-                S = np.log(Sww1_turb)
-                Pww1 = np.polyfit(F,S,deg = 1)
-                Pww1hat = np.exp(np.polyval(Pww1,np.log(fm)))
-                
-                F = np.log(fmww2)
-                S = np.log(Sww2_turb)
-                Pww2 = np.polyfit(F,S,deg = 1)
-                Pww2hat = np.exp(np.polyval(Pww2,np.log(fm)))
-                
-                #Something is going wrong here. Might be the interpolation, the 
-                #Suu_wave values should be nonnegative because we're subtracting
-                #an interpolation below the wave peak
-                
-                #Wave spectra
-                Suu_wave = Suu[waverange] - Puuhat[waverange]
-                Svv_wave = Svv[waverange] - Pvvhat[waverange]
-                Sww1_wave = Sww1[waverange] - Pww1hat[waverange]
-                Sww2_wave = Sww2[waverange] - Pww2hat[waverange]
-                
-                
-#                #Plotting to test the code
-#                plt.figure()
-#                plt.loglog(fmuu,Suu_turb,'k*')
-#                plt.loglog(fm[waverange],Suu[waverange],'r-')
-#                plt.loglog(fm,Puuhat,'b-')
-#                plt.title('Suu')
-#                
-#                plt.figure()
-#                plt.loglog(fmww1,Sww1_turb,'k*')
-#                plt.loglog(fm[waverange],Sww1[waverange],'r-')
-#                plt.loglog(fm,Pww1hat,'b-')
-#                plt.title('Sww')
-                
-                #This should maybe be nnyq*df? But then the amplitudes are way too big
-                Amu_wave = np.sqrt((Suu_wave+0j)*(df))
-                Amv_wave = np.sqrt((Svv_wave+0j))*(df)
-                Amww1_wave = np.sqrt((Sww1_wave+0j)*(df))
-                Amww2_wave = np.sqrt((Sww2_wave+0j)*(df))
-                
-                #Wave Magnitudes
-                Um_wave = np.sqrt(np.real(Amu_wave)**2 + np.imag(Amu_wave)**2)
-                Vm_wave = np.sqrt(np.real(Amv_wave)**2 + np.imag(Amv_wave)**2)
-                W1m_wave = np.sqrt(np.real(Amww1_wave)**2 + np.imag(Amww1_wave)**2)
-                W2m_wave = np.sqrt(np.real(Amww2_wave)**2 + np.imag(Amww2_wave)**2)
-                
-                #Wave reynolds stress
-                uw1_wave = np.nansum(Um_wave*W1m_wave*np.cos(W1ph[waverange]-Uph[waverange]))
-                uw2_wave = np.nansum(Um_wave*W2m_wave*np.cos(W2ph[waverange]-Uph[waverange]))
-                uv_wave =  np.nansum(Um_wave*Vm_wave*np.cos(Vph[waverange]-Uph[waverange]))
-                vw1_wave = np.nansum(Vm_wave*W1m_wave*np.cos(W1ph[waverange]-Vph[waverange]))
-                vw2_wave = np.nansum(Vm_wave*W2m_wave*np.cos(W2ph[waverange]-Vph[waverange]))
-                w1w2_wave = np.nansum(W1m_wave*W2m_wave*np.cos(W2ph[waverange]- W1ph[waverange]))
-                
-                uu_wave = np.nansum(Suu_wave*df)
-                vv_wave = np.nansum(Svv_wave*df)
-                w1w1_wave = np.nansum(Sww1_wave*df)
-                w2w2_wave = np.nansum(Sww2_wave*df)
+            #Computing the full spectra
+        
+            Suu = np.real(Amu*np.conj(Amu))/(nnyq*df)
+            Suu = Suu.squeeze()[:nnyq]
             
-                
-                                
-                #Full reynolds stresses
-                uu = np.nansum(Suu*df)
-                uv = np.nansum(Suv*df)
-                uw1 = np.nansum(Suw1*df)
-                uw2 = np.nansum(Suw2*df)
-                vv = np.nansum(Svv*df)
-                vw1 = np.nansum(Svw1*df)
-                vw2 = np.nansum(Svw2*df)
-                w1w1 = np.nansum(Sww1*df)
-                w2w2 = np.nansum(Sww2*df)
-                w1w2 = np.nansum(Sw1w2*df)
-                
-                #Turbulent reynolds stresses
-                
-                upup = uu - uu_wave
-                vpvp = vv - vv_wave
-                w1pw1p = w1w1 - w1w1_wave
-                w2pw2p = w2w2 - w2w2_wave
-                upw1p = uw1 - uw1_wave
-                upw2p = uw2 - uw2_wave
-                upvp = uv - uv_wave
-                vpw1p = vw1 - vw1_wave
-                vpw2p = vw2 - vw2_wave
-                w1pw2p = w1w2 - w1w2_wave
-                
-                #Turbulent reynolds stresses
-                waveturb['uw1'][jj] = upw1p
-                waveturb['vw1'][jj] = vpw1p
-                waveturb['uw2'][jj] = upw2p
-                waveturb['vw2'][jj] = vpw2p
-                waveturb['uv'][jj] = upvp
-                waveturb['uu'][jj] = upup
-                waveturb['vv'][jj] = vpvp
-                waveturb['w1w1'][jj] = w1pw1p
-                waveturb['w2w2'][jj] = w2pw2p
-                waveturb['w1w2'][jj] = w1pw2p
-                
-                #Wave reynolds stresses
-                waveturb['uw1_wave'][jj] = uw1_wave
-                waveturb['vw1_wave'][jj] = vw1_wave
-                waveturb['uw2_wave'][jj] = uw2_wave
-                waveturb['vw2_wave'][jj] = vw2_wave
-                waveturb['uv_wave'][jj] = uv_wave
-                waveturb['uu_wave'][jj] = uu_wave
-                waveturb['vv_wave'][jj] = vv_wave
-                waveturb['w1w1_wave'][jj] = w1w1_wave
-                waveturb['w2w2_wave'][jj] = w2w2_wave
-                waveturb['w1w2_wave'][jj] = w1w2_wave
+            Svv = np.real(Amv*np.conj(Amv))/(nnyq*df)
+            Svv = Svv.squeeze()[:nnyq]
+            
+            Sww1 = np.real(Amw1*np.conj(Amw1))/(nnyq*df)
+            Sww1 = Sww1.squeeze()[:nnyq]
+            
+            Sww2 = np.real(Amw2*np.conj(Amw2))/(nnyq*df)
+            Sww2 = Sww2.squeeze()[:nnyq]
+            
+            Suv = np.real(Amu*np.conj(Amv))/(nnyq*df)
+            Suv = Suv.squeeze()[:nnyq]
+            
+            Suw1 = np.real(Amu*np.conj(Amw1))/(nnyq*df)
+            Suw1 = Suw1.squeeze()[:nnyq]
+            
+            Suw2 = np.real(Amu*np.conj(Amw2))/(nnyq*df)
+            Suw2 = Suw2.squeeze()[:nnyq]
+            
+            Svw1 = np.real(Amv*np.conj(Amw1))/(nnyq*df)
+            Svw1 = Svw1.squeeze()[:nnyq]
+            
+            Svw2 = np.real(Amv*np.conj(Amw2))/(nnyq*df)
+            Svw2 = Svw2.squeeze()[:nnyq]
+            
+            Sw1w2 = np.real(Amw1*np.conj(Amw2))/(nnyq*df)
+            Sw1w2 = Sw1w2.squeeze()[:nnyq]
+            
+            #Make sure wave peak is in a reasonable range of frequencies
+            offset = np.sum(fm<=0.1)
+            uumax = np.argmax(Suu[(fm>0.1) & (fm < 0.7)]) + offset
+            
+            #These should be adjusted based on width of wave peak in frequency space
+            widthratiolow = 2.333
+            widthratiohigh = 1.4
+            fmmax = fm[uumax]
+            waverange = np.arange(uumax - (fmmax/widthratiolow)//df,uumax + (fmmax/widthratiohigh)//df).astype(int)
+
+            interprange = np.arange(1,np.nanargmin(np.abs(fm - 1))).astype(int)
+            interprangeW = np.arange(1,np.nanargmin(np.abs(fm-1))).astype(int)
+            
+            interprange = interprange[(interprange>=0) & (interprange<nnyq)]
+            waverange = waverange[(waverange>=0) & (waverange<nnyq)]
+            interprangeW = interprangeW[(interprangeW >= 0) & (interprangeW < nnyq)]
+            
+            Suu_turb = Suu[interprange]
+            fmuu = fm[interprange]
+            Suu_turb = np.delete(Suu_turb,waverange-interprange[0])
+            fmuu = np.delete(fmuu,waverange-interprange[0])
+            Suu_turb = Suu_turb[fmuu>0]
+            fmuu = fmuu[fmuu>0]
+            
+            Svv_turb = Svv[interprange]
+            fmvv = fm[interprange]
+            Svv_turb = np.delete(Svv_turb,waverange-interprange[0])
+            fmvv = np.delete(fmvv,waverange-interprange[0])
+            Svv_turb = Svv_turb[fmvv>0]
+            fmvv = fmvv[fmvv>0]
+            
+            Sww1_turb = Sww1[interprangeW]
+            fmww1 = fm[interprangeW]
+            Sww1_turb = np.delete(Sww1_turb,waverange-interprangeW[0])
+            fmww1 = np.delete(fmww1,waverange-interprangeW[0])
+            Sww1_turb = Sww1_turb[fmww1>0]
+            fmww1 = fmww1[fmww1>0]
+            
+            Sww2_turb = Sww2[interprangeW]
+            fmww2 = fm[interprangeW]
+            Sww2_turb = np.delete(Sww2_turb,waverange-interprangeW[0])
+            fmww2 = np.delete(fmww2,waverange-interprangeW[0])
+            Sww2_turb = Sww2_turb[fmww2>0]
+            fmww2 = fmww2[fmww2>0]
+            
+            #Linear interpolation over turbulent spectra
+            F = np.log(fmuu)
+            S = np.log(Suu_turb)
+            Puu = np.polyfit(F,S,deg = 1)
+            Puuhat = np.exp(np.polyval(Puu,np.log(fm)))
+            
+            F = np.log(fmvv)
+            S = np.log(Svv_turb)
+            Pvv = np.polyfit(F,S,deg = 1)
+            Pvvhat = np.exp(np.polyval(Pvv,np.log(fm)))
+                                      
+            F = np.log(fmww1)
+            S = np.log(Sww1_turb)
+            Pww1 = np.polyfit(F,S,deg = 1)
+            Pww1hat = np.exp(np.polyval(Pww1,np.log(fm)))
+            
+            F = np.log(fmww2)
+            S = np.log(Sww2_turb)
+            Pww2 = np.polyfit(F,S,deg = 1)
+            Pww2hat = np.exp(np.polyval(Pww2,np.log(fm)))
+        
+            
+            #Wave spectra
+            Suu_wave = Suu[waverange] - Puuhat[waverange]
+            Svv_wave = Svv[waverange] - Pvvhat[waverange]
+            Sww1_wave = Sww1[waverange] - Pww1hat[waverange]
+            Sww2_wave = Sww2[waverange] - Pww2hat[waverange]
+            
+            
+#            #Plotting to test the code
+#            plt.figure()
+#            plt.loglog(fmuu,Suu_turb,'k*')
+#            plt.loglog(fm[waverange],Suu[waverange],'r-')
+#            plt.loglog(fm,Puuhat,'b-')
+#            plt.title('Suu')
+#            
+#            plt.figure()
+#            plt.loglog(fmww1,Sww1_turb,'k*')
+#            plt.loglog(fm[waverange],Sww1[waverange],'r-')
+#            plt.loglog(fm,Pww1hat,'b-')
+#            plt.title('Sww')
+        
+            #Fourier coefficients 
+            Amu_wave = np.sqrt((Suu_wave+0j)*(df))
+            Amv_wave = np.sqrt((Svv_wave+0j))*(df)
+            Amww1_wave = np.sqrt((Sww1_wave+0j)*(df))
+            Amww2_wave = np.sqrt((Sww2_wave+0j)*(df))
+            
+            #Wave Magnitudes
+            Um_wave = np.sqrt(np.real(Amu_wave)**2 + np.imag(Amu_wave)**2)
+            Vm_wave = np.sqrt(np.real(Amv_wave)**2 + np.imag(Amv_wave)**2)
+            W1m_wave = np.sqrt(np.real(Amww1_wave)**2 + np.imag(Amww1_wave)**2)
+            W2m_wave = np.sqrt(np.real(Amww2_wave)**2 + np.imag(Amww2_wave)**2)
+            
+            #Wave reynolds stress
+            uw1_wave = np.nansum(Um_wave*W1m_wave*np.cos(W1ph[waverange]-Uph[waverange]))
+            uw2_wave = np.nansum(Um_wave*W2m_wave*np.cos(W2ph[waverange]-Uph[waverange]))
+            uv_wave =  np.nansum(Um_wave*Vm_wave*np.cos(Vph[waverange]-Uph[waverange]))
+            vw1_wave = np.nansum(Vm_wave*W1m_wave*np.cos(W1ph[waverange]-Vph[waverange]))
+            vw2_wave = np.nansum(Vm_wave*W2m_wave*np.cos(W2ph[waverange]-Vph[waverange]))
+            w1w2_wave = np.nansum(W1m_wave*W2m_wave*np.cos(W2ph[waverange]- W1ph[waverange]))
+            
+            uu_wave = np.nansum(Suu_wave*df)
+            vv_wave = np.nansum(Svv_wave*df)
+            w1w1_wave = np.nansum(Sww1_wave*df)
+            w2w2_wave = np.nansum(Sww2_wave*df)
+        
+            #Full reynolds stresses
+            uu = np.nansum(Suu*df)
+            uv = np.nansum(Suv*df)
+            uw1 = np.nansum(Suw1*df)
+            uw2 = np.nansum(Suw2*df)
+            vv = np.nansum(Svv*df)
+            vw1 = np.nansum(Svw1*df)
+            vw2 = np.nansum(Svw2*df)
+            w1w1 = np.nansum(Sww1*df)
+            w2w2 = np.nansum(Sww2*df)
+            w1w2 = np.nansum(Sw1w2*df)
+            
+            #Turbulent reynolds stresses           
+            upup = uu - uu_wave
+            vpvp = vv - vv_wave
+            w1pw1p = w1w1 - w1w1_wave
+            w2pw2p = w2w2 - w2w2_wave
+            upw1p = uw1 - uw1_wave
+            upw2p = uw2 - uw2_wave
+            upvp = uv - uv_wave
+            vpw1p = vw1 - vw1_wave
+            vpw2p = vw2 - vw2_wave
+            w1pw2p = w1w2 - w1w2_wave
+            
+            #Turbulent reynolds stresses
+            waveturb['uw1'][jj] = upw1p
+            waveturb['vw1'][jj] = vpw1p
+            waveturb['uw2'][jj] = upw2p
+            waveturb['vw2'][jj] = vpw2p
+            waveturb['uv'][jj] = upvp
+            waveturb['uu'][jj] = upup
+            waveturb['vv'][jj] = vpvp
+            waveturb['w1w1'][jj] = w1pw1p
+            waveturb['w2w2'][jj] = w2pw2p
+            waveturb['w1w2'][jj] = w1pw2p
+            
+            #Wave reynolds stresses
+            waveturb['uw1_wave'][jj] = uw1_wave
+            waveturb['vw1_wave'][jj] = vw1_wave
+            waveturb['uw2_wave'][jj] = uw2_wave
+            waveturb['vw2_wave'][jj] = vw2_wave
+            waveturb['uv_wave'][jj] = uv_wave
+            waveturb['uu_wave'][jj] = uu_wave
+            waveturb['vv_wave'][jj] = vv_wave
+            waveturb['w1w1_wave'][jj] = w1w1_wave
+            waveturb['w2w2_wave'][jj] = w2w2_wave
+            waveturb['w1w2_wave'][jj] = w1w2_wave
                 
     return waveturb
 
@@ -536,136 +526,43 @@ def get_r2(f,xdata,ydata,popt):
     
                 
 
-def get_turb(vectrino_kk,vectrino_filt_kk,fs,fc,filt_kernel,filtstyle):
+def get_turb(vectrino_kk,fs):
     
-    #%% Constants and initializing dict
+    #initializing dict
     turb = dict()  
     
+    m,n = np.shape(vectrino_kk['velmaj'])
+    
     #Reynolds stress
-    
-    if np.shape(vectrino_kk['velmaj'] == vectrino_filt_kk['velmaj']):
-        up = vectrino_kk['velmaj'] - vectrino_filt_kk['velmaj']
-        vp = vectrino_kk['velmin'] - vectrino_filt_kk['velmin']
-        w1p = vectrino_kk['w1'] - vectrino_filt_kk['w1']
-        w2p = vectrino_kk['w2'] - vectrino_filt_kk['w2']
-    else:
-        m1,n1 = np.shape(vectrino_filt_kk['velmaj'])
-        up = vectrino_kk['velmaj'][:,:n1] - vectrino_filt_kk['velmaj']
-        vp = vectrino_kk['velmin'][:,:n1] - vectrino_filt_kk['velmin']
-        w1p = vectrino_kk['w1'][:,:n1] - vectrino_filt_kk['w1']
-        w2p = vectrino_kk['w2'][:,:n1] - vectrino_filt_kk['w2']
-    
-    m,n = np.shape(up)
-    
-    
-    #Butterworth low-pass filter, will give a reynolds stress at each time
-    if filtstyle == 'butter':
-        #Filtering
-        Wn = fc/(fs/2)
-        b,a = sig.butter(2,Wn,btype = 'low')
-        
-        turb['uw1'] = np.empty(np.shape(up))
-        turb['vw1'] = np.empty(np.shape(up))
-        turb['uw2'] = np.empty(np.shape(up))
-        turb['vw2'] = np.empty(np.shape(up))
-        turb['uv'] = np.empty(np.shape(up))
-        turb['w1w2'] = np.empty(np.shape(up))
-        turb['uu'] = np.empty(np.shape(up))
-        turb['vv'] = np.empty(np.shape(up))
-        turb['w1w1'] = np.empty(np.shape(up))
-        turb['w2w2'] = np.empty(np.shape(up))
-        
-        for jj in range(np.size(vectrino_kk['z'])):
-            turb['uw1'][jj,:] = sig.filtfilt(b,a,up[jj,:]*w1p[jj,:])
-            turb['vw1'][jj,:] = sig.filtfilt(b,a,vp[jj,:]*w1p[jj,:])
-            turb['uw2'][jj,:] = sig.filtfilt(b,a,up[jj,:]*w2p[jj,:])
-            turb['vw2'][jj,:] = sig.filtfilt(b,a,vp[jj,:]*w2p[jj,:])
-            turb['uv'][jj,:] = sig.filtfilt(b,a,up[jj,:]*vp[jj,:])
-            turb['w1w2'][jj,:] = sig.filtfilt(b,a,w1p[jj,:]*w2p[jj,:])
-            turb['uu'][jj,:] = sig.filtfilt(b,a,up[jj,:]*up[jj,:])
-            turb['vv'][jj,:] = sig.filtfilt(b,a,vp[jj,:]*vp[jj,:])
-            turb['w1w1'][jj,:] = sig.filtfilt(b,a,w1p[jj,:]*w1p[jj,:])
-            turb['w2w2'][jj,:] = sig.filtfilt(b,a,w2p[jj,:]*w2p[jj,:])
-
     #Just using the covariance, will give one value for the entire burst        
-    if filtstyle == 'nofilt':
-        
-        turb['uw1'] = np.empty((m,))
-        turb['vw1'] = np.empty((m,))
-        turb['uw2'] = np.empty((m,))
-        turb['vw2'] = np.empty((m,))
-        turb['uv'] = np.empty((m,))
-        turb['w1w2'] = np.empty((m,))
-        turb['uu'] = np.empty((m,))
-        turb['vv'] = np.empty((m,))
-        turb['w1w1'] = np.empty((m,))
-        turb['w2w2'] = np.empty((m,))
-        
-        u = copy.deepcopy(vectrino_kk['velmaj'])
-        v = copy.deepcopy(vectrino_kk['velmin'])
-        w1 = copy.deepcopy(vectrino_kk['w1'])
-        w2 = copy.deepcopy(vectrino_kk['w2'])
-        
-        for jj in range(np.size(vectrino_kk['z'])):
-            turb['uw1'][jj] = np.cov(u[jj,:],w1[jj,:])[0][1]
-            turb['vw1'][jj] = np.cov(v[jj,:],w1[jj,:])[0][1]
-            turb['uw2'][jj] = np.cov(u[jj,:],w2[jj,:])[0][1]
-            turb['vw2'][jj] = np.cov(v[jj,:],w2[jj,:])[0][1]
-            turb['uv'][jj] = np.cov(u[jj,:],v[jj,:])[0][1]
-            turb['w1w2'][jj] = np.cov(w1[jj,:],w2[jj,:])[0][1]
-            turb['uu'][jj] = np.cov(u[jj,:],u[jj,:])[0][1]
-            turb['vv'][jj] = np.cov(v[jj,:],v[jj,:])[0][1]
-            turb['w1w1'][jj] = np.cov(w1[jj,:],w1[jj,:])[0][1]
-            turb['w2w2'][jj] = np.cov(w2[jj,:],w2[jj,:])[0][1]
+    turb['uw1'] = np.empty((m,))
+    turb['vw1'] = np.empty((m,))
+    turb['uw2'] = np.empty((m,))
+    turb['vw2'] = np.empty((m,))
+    turb['uv'] = np.empty((m,))
+    turb['w1w2'] = np.empty((m,))
+    turb['uu'] = np.empty((m,))
+    turb['vv'] = np.empty((m,))
+    turb['w1w1'] = np.empty((m,))
+    turb['w2w2'] = np.empty((m,))
     
-    #Median filter, will give reynolds stress at every time
-    if filtstyle == 'median':
-        
-        turb['uu'] = scipy.ndimage.filters.median_filter(up*up,
-                     size = filt_kernel,mode = 'nearest')
-        turb['vv'] = scipy.ndimage.filters.median_filter(vp*vp,
-                     size = filt_kernel,mode = 'nearest')
-        turb['w1w1'] = scipy.ndimage.filters.median_filter(w1p*w1p,
-                     size = filt_kernel,mode = 'nearest')
-        turb['w2w2'] = scipy.ndimage.filters.median_filter(w2p*w2p,
-                     size = filt_kernel,mode = 'nearest')
-        turb['uv'] = scipy.ndimage.filters.median_filter(up*vp,
-                     size = filt_kernel,mode = 'nearest')
-        turb['uw1'] = scipy.ndimage.filters.median_filter(up*w1p,
-                     size = filt_kernel,mode = 'nearest')
-        turb['uw2'] = scipy.ndimage.filters.median_filter(up*w2p,
-                     size = filt_kernel,mode = 'nearest')
-        turb['vw1'] = scipy.ndimage.filters.median_filter(vp*w1p,
-                     size = filt_kernel,mode = 'nearest')
-        turb['vw2'] = scipy.ndimage.filters.median_filter(vp*w2p,
-                     size = filt_kernel,mode = 'nearest')
-        turb['w1w2'] = scipy.ndimage.filters.median_filter(w1p*w2p,
-                     size = filt_kernel,mode = 'nearest')
+    u = copy.deepcopy(vectrino_kk['velmaj'])
+    v = copy.deepcopy(vectrino_kk['velmin'])
+    w1 = copy.deepcopy(vectrino_kk['w1'])
+    w2 = copy.deepcopy(vectrino_kk['w2'])
     
-    if filtstyle == 'fourier':
-        
-        turb['uw1'] = np.empty(np.shape(up))
-        turb['vw1'] = np.empty(np.shape(up))
-        turb['uw2'] = np.empty(np.shape(up))
-        turb['vw2'] = np.empty(np.shape(up))
-        turb['uv'] = np.empty(np.shape(up))
-        turb['w1w2'] = np.empty(np.shape(up))
-        turb['uu'] = np.empty(np.shape(up))
-        turb['vv'] = np.empty(np.shape(up))
-        turb['w1w1'] = np.empty(np.shape(up))
-        turb['w2w2'] = np.empty(np.shape(up))
-        
-        for jj in range(np.size(vectrino_kk['z'])):
-            turb['uw1'][jj,:] = lpf(up[jj,:]*w1p[jj,:],fs,fc)
-            turb['vw1'][jj,:] = lpf(vp[jj,:]*w1p[jj,:],fs,fc)
-            turb['uw2'][jj,:] = lpf(up[jj,:]*w2p[jj,:],fs,fc)
-            turb['vw2'][jj,:] = lpf(vp[jj,:]*w2p[jj,:],fs,fc)
-            turb['uv'][jj,:] = lpf(up[jj,:]*vp[jj,:],fs,fc)
-            turb['w1w2'][jj,:] = lpf(w1p[jj,:]*w2p[jj,:],fs,fc)
-            turb['uu'][jj,:] = lpf(up[jj,:]*up[jj,:],fs,fc)
-            turb['vv'][jj,:] = lpf(vp[jj,:]*vp[jj,:],fs,fc)
-            turb['w1w1'][jj,:] = lpf(w1p[jj,:]*w1p[jj,:],fs,fc)
-            turb['w2w2'][jj,:] = lpf(w2p[jj,:]*w2p[jj,:],fs,fc)
+    for jj in range(np.size(vectrino_kk['z'])):
+        turb['uw1'][jj] = np.cov(u[jj,:],w1[jj,:])[0][1]
+        turb['vw1'][jj] = np.cov(v[jj,:],w1[jj,:])[0][1]
+        turb['uw2'][jj] = np.cov(u[jj,:],w2[jj,:])[0][1]
+        turb['vw2'][jj] = np.cov(v[jj,:],w2[jj,:])[0][1]
+        turb['uv'][jj] = np.cov(u[jj,:],v[jj,:])[0][1]
+        turb['w1w2'][jj] = np.cov(w1[jj,:],w2[jj,:])[0][1]
+        turb['uu'][jj] = np.cov(u[jj,:],u[jj,:])[0][1]
+        turb['vv'][jj] = np.cov(v[jj,:],v[jj,:])[0][1]
+        turb['w1w1'][jj] = np.cov(w1[jj,:],w1[jj,:])[0][1]
+        turb['w2w2'][jj] = np.cov(w2[jj,:],w2[jj,:])[0][1]
+    
             
     #Calculating u_star based on the Reynolds stress and max velocity gradient
     velmean = np.nanmean(vectrino_kk['velmaj'],axis = 1)
