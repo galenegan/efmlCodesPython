@@ -20,6 +20,9 @@ files = glob.glob(cnvpath+'/*.cnv')
 
 SBE56data = dict()
 
+"""This could probably be done in 1 line with pandas.read_csv, but I wrote this before
+I used pandas"""
+
 for ii in range(len(files)):
     name = files[ii]
     datetemp = np.array([],dtype='datetime64')
