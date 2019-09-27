@@ -19,7 +19,6 @@ import scipy.optimize
 import scipy.io as sio
 import scipy.ndimage
 import scipy.signal as sig
-from xcorr import xcorr
 from autocorr import autocorr
 
 
@@ -56,88 +55,6 @@ def xyz_enu(vectrino_kk,heading,pitch,roll):
 
     return vectrino_kk
 
-def yw(u,v,w,p,fs):
-    
-    """Young and Webster (2018) wave-turbulence decomposition"""
-    
-    yw = dict()
-    
-    U = copy.deepcopy(u)
-    V = copy.deepcopy(v)
-    W = copy.deepcopy(w)
-    P = copy.deepcopy(p)
-    
-    #Interpolating out nans
-    P = naninterp(P) 
-    
-    for jj in range(U.shape[0]):
-        if np.sum(np.isnan(U[jj,:])) < len(U[jj,:])/2:
-            U[jj,:] = naninterp(U[jj,:])
-            V[jj,:] = naninterp(V[jj,:])
-            W[jj,:] = naninterp(W[jj,:])
-    
-    yw['uu'] = np.zeros((U.shape[0],))*np.NaN
-    yw['vv'] = np.zeros((U.shape[0],))*np.NaN
-    yw['ww'] = np.zeros((U.shape[0],))*np.NaN
-    yw['uw'] = np.zeros((U.shape[0],))*np.NaN
-    yw['uv'] = np.zeros((U.shape[0],))*np.NaN
-    yw['vw'] = np.zeros((U.shape[0],))*np.NaN
-    
-    yw['uu_wave'] = np.zeros((U.shape[0],))*np.NaN
-    yw['vv_wave'] = np.zeros((U.shape[0],))*np.NaN
-    yw['ww_wave'] = np.zeros((U.shape[0],))*np.NaN
-    yw['uw_wave'] = np.zeros((U.shape[0],))*np.NaN
-    yw['uv_wave'] = np.zeros((U.shape[0],))*np.NaN
-    yw['vw_wave'] = np.zeros((U.shape[0],))*np.NaN
-    
-    for jj in range(U.shape[0]):
-        if np.sum(np.isnan(U[jj,:])) < len(U[jj,:])/2:
-   
-            Pd = sig.detrend(P)
-            Ud = sig.detrend(U[jj,:])
-            Vd = sig.detrend(V[jj,:])
-            Wd = sig.detrend(W[jj,:])
-            #Constructing matrix A
-            M = len(Ud) 
-            N = 101
-            
-            A = np.zeros((M,N))
-            
-            for m in range(M-N//2):
-                A[m,:] = Pd[np.arange(m-(N-1)//2,m+N//2 + 1)]
-            for m in range(M-N//2,M):
-                A[m,:] = np.flipud(A[m-(M-N//2),:])
-                
-            hu = np.matmul(np.linalg.inv(np.matmul(A.T,A)),np.matmul(A.T,Ud))
-            Uhat = np.matmul(A,hu)
-            
-            hv = np.matmul(np.linalg.inv(np.matmul(A.T,A)),np.matmul(A.T,Vd))
-            Vhat = np.matmul(A,hv)
-            
-            hw = np.matmul(np.linalg.inv(np.matmul(A.T,A)),np.matmul(A.T,Wd))
-            What = np.matmul(A,hw)
-            
-            dU = Ud - Uhat
-            dV = Vd - Vhat
-            dW = Wd - What
-            
-            
-            yw['uu'][jj] = np.nanmean(dU*dU)
-            yw['vv'][jj] = np.nanmean(dV*dV)
-            yw['ww'][jj] = np.nanmean(dW*dW)
-            yw['uw'][jj] = np.nanmean(dU*dW)
-            yw['uv'][jj] = np.nanmean(dU*dV)
-            yw['vw'][jj] = np.nanmean(dV*dW)
-            
-            yw['uu_wave'][jj] = np.nanmean(Uhat*Uhat)
-            yw['vv_wave'][jj] = np.nanmean(Vhat*Vhat)
-            yw['ww_wave'][jj] = np.nanmean(What*What)
-            yw['uw_wave'][jj] = np.nanmean(Uhat*What)
-            yw['uv_wave'][jj] = np.nanmean(Uhat*Vhat)
-            yw['vw_wave'][jj] = np.nanmean(Vhat*What)
-
-    return yw
-    
 
 def lpf(arr_in,fs,fc):
     
@@ -258,7 +175,7 @@ def calculate_fft(x,nfft):
     
     return A
 
-def get_turb_waves(vectrino_kk,fs,method):
+def get_turb_waves(vectrino_kk,fs):
     
     
     """Bricker and Monismith (2007) wave-turbulence decomposition"""
@@ -562,276 +479,102 @@ def get_turb(vectrino_kk,fs):
         turb['vv'][jj] = np.cov(v[jj,:],v[jj,:])[0][1]
         turb['w1w1'][jj] = np.cov(w1[jj,:],w1[jj,:])[0][1]
         turb['w2w2'][jj] = np.cov(w2[jj,:],w2[jj,:])[0][1]
+         
     
-            
-    #Calculating u_star based on the Reynolds stress and max velocity gradient
-    velmean = np.nanmean(vectrino_kk['velmaj'],axis = 1)
+    #Log law fitting
     
-    if np.any(vectrino_kk['z'] < 0.002) & (np.sum(np.isnan(velmean)) < len(velmean)):
+    #General log law which includes an offset, or canopy penetration parameter d
+    def loglaw(z,ustar,z0,d):  
+        u = (ustar/0.41)*np.log((z-d)/z0)
+        return u
         
-        dudzmean = np.gradient(velmean,-0.001,edge_order = 2 , axis = 0)
-        gradloc = np.where(np.abs(dudzmean) == np.nanmax(np.abs(dudzmean)))[0][0]
+    velmean = np.nanmean(u, axis = 1)
+    H = len(velmean[vectrino_kk['z']>=0])
+    
+    botind = np.arange(H//4,H) #Adjust this based on data
+    ubar = np.abs(velmean[botind])
+    z = vectrino_kk['z'][botind] 
         
-        dudz = np.gradient(vectrino_kk['velmaj'],-0.001,edge_order = 2 , axis = 0)
-        dvdz = np.gradient(vectrino_kk['velmin'],-0.001,edge_order = 2 , axis = 0)
+    try:
         
-        turb['ustar_grad'] = np.sqrt(1e-6*np.abs(dudz[gradloc,:]))
-        turb['vstar_grad'] = np.sqrt(1e-6*np.abs(dvdz[gradloc,:]))
+        #Finding canopy height based on velocity gradient
+        #This is just to isolate the section of the velocity profile that we
+        #want to fit.
+        dubar = np.gradient(ubar,-.001,edge_order = 2)
         
-        if np.size(np.shape(turb['uw1'])) == 2:
-            turb['ustar1'] = np.sqrt(np.abs(turb['uw1'][gradloc,:]))
-            turb['ustar2'] = np.sqrt(np.abs(turb['uw2'][gradloc,:]))
-            turb['vstar1'] = np.sqrt(np.abs(turb['vw1'][gradloc,:]))
-            turb['vstar2'] = np.sqrt(np.abs(turb['vw2'][gradloc,:]))
-        
-        elif np.size(np.shape(turb['uw1']))==1:
-            turb['ustar1'] = np.sqrt(np.abs(turb['uw1'][gradloc]))
-            turb['ustar2'] = np.sqrt(np.abs(turb['uw2'][gradloc]))
-            turb['vstar1'] = np.sqrt(np.abs(turb['vw1'][gradloc]))
-            turb['vstar2'] = np.sqrt(np.abs(turb['vw2'][gradloc]))
-        
-        
-        def vsl(z,ustar):
-            nu = 1e-6
-            u = (ustar**2)*z/nu
-            return u
-
-##Use this loglaw if setting d = hc, or not accounting for canopy
-
-#        def loglaw(z,ustar,z0): 
-#            u =  (ustar/0.41)*np.log(z/(z0))
-#            return u
-  
-##Use this loglaw if fitting for d, canopy penetration depth      
-        def loglaw(z,ustar,z0,d):  
-            u = (ustar/0.41)*np.log((z-d)/z0)
-            return u
-#        
-#        def loglaw_cw(z,ustartemp,z0cw):
-#            u = (ustartemp/0.41)*np.log(z/z0cw)
-#            return u
-            
-        def loglaw_cw(z,ustartemp,z0cw,dcw):
-            u = (ustartemp/0.41)*np.log((z-dcw)/z0cw)
-            return u
-        
-        H = len(velmean[vectrino_kk['z']>=0])
-        botind = np.arange(H//4,H)
-        ubar = np.abs(velmean[botind])
-        z = vectrino_kk['z'][botind] 
-        
-        try:
-            dubar = np.gradient(ubar,-.001,edge_order = 2)
-            
-            if (ubar[np.nanargmax(dubar) + 1] > .01):
-                hc = z[np.nanargmax(dubar) + 2]
-            else:
-                hc = z[np.nanargmax(dubar) + 1]
-        
-            hcidx = np.nanargmin(np.abs(z-hc))
-            
-            zfit = z[:hcidx + 1]
-            ufit = ubar[:hcidx + 1]
-            
-#            #Adjusting z to start at ~0 at canopy height 
-#            zfit -= zfit[-1]
-#            zfit[-1] = .0001
-            
-            
+        if (ubar[np.nanargmax(dubar) + 1] > .01):
+            hc = z[np.nanargmax(dubar) + 2]
+        else:
+            hc = z[np.nanargmax(dubar) + 1]
+    
+        hcidx = np.nanargmin(np.abs(z-hc))
+        zfit = z[:hcidx + 1]
+        ufit = ubar[:hcidx + 1]
                 
-            ustarlogfit = np.sqrt(1e-6*scipy.stats.linregress(zfit[-3:],ufit[-3:])[0])
-            intercept = scipy.stats.linregress(zfit[-3:],ufit[-3:])[1]
-        
-# Use this one if just fitting for ustar and z0
-#            Plog,Pcov2 = scipy.optimize.curve_fit(loglaw,zfit[:-2],ufit[:-2],p0 = (0.01,1e-5),maxfev = 10000, bounds = (1e-7,[.04,1e-2]))
-            
-#            ##Use this one if fitting for d as well
-            Plog,Pcov2 = scipy.optimize.curve_fit(loglaw,zfit[:-2],ufit[:-2],p0 = (0.01,1e-5,hc),maxfev = 10000)
-            
-            
-            logfit = (Plog[0]/.41)*np.log((zfit)/Plog[1])
-            logerror = np.abs(logfit - ufit)
-        
-            linfit = (ustarlogfit**2)*(zfit)/1e-6 + intercept
-            linerror = np.abs(linfit - ufit)
-            
-            evec = np.where(logerror<linerror)[0]
-            if np.size(evec) == 0:
-                logstart = 3
-            else:
-                logstart = np.where(logerror<linerror)[0][-1]
-            
-            turb['ustar_fit_log'] = ustarlogfit
-            
-            #Plog,Pcov2 = scipy.optimize.curve_fit(loglaw,zfit[:logstart + 1],ufit[:logstart + 1],
-#                                                  p0 = (0.01,1e-5),maxfev = 10000, bounds = (1e-7,[.04,1e-2]))
-            
-             ##Use this one if fitting for d as well
-            Plog,Pcov2 = scipy.optimize.curve_fit(loglaw,zfit[:logstart + 1],ufit[:logstart + 1],p0 = (0.01,1e-5,hc/2),
-                                                  maxfev = 10000, bounds = (1e-7,[.04,1e-2,hc]))
-            
-            turb['ustarc'] = Plog[0]
-            turb['z0c'] = Plog[1]
-            turb['dc'] = Plog[2]
-            
-            turb['r2ustarlog'] = scipy.stats.linregress(zfit[-3:],ufit[-3:])[2]**2
-            turb['r2ustarc'] = get_r2(loglaw,zfit[:logstart + 1],ufit[:logstart + 1],Plog)
-            
-#            #Plotting to test code
-#            plt.figure()
-#            plt.plot(ufit,zfit,'k*')
-#            plt.plot(loglaw(zfit,*Plog),zfit,'r-')
-            
-            #Now fitting grant madsen ustarcw
-#            Pcw,Pcov = scipy.optimize.curve_fit(loglaw_cw,zfit[-3:],ufit[-3:],p0 = (.01,1e-5))
-            
-            
-#            #Use this if including fitted dc         
-#            if turb['dc'] < hc:
-#                zfitcw = zfit[-3:] - turb['dc']
-#            else:
-#                zfitcw = zfit[-3:] - hc + 0.0001
-#            
-#            Pcw,Pcov = scipy.optimize.curve_fit(loglaw_cw,zfitcw,ufit[-3:],p0 = (.01,1e-5))
-#            
-#            turb['ustarcw'] = turb['ustarc']**2/Pcw[0]
-#            turb['z0cw'] = Pcw[1]
-#            turb['dcw'] = Pcw[2]
-#            
-#            turb['r2cw'] = get_r2(loglaw_cw,zfit[-3:],ufit[-3:],Pcw)
-#            
-        except ValueError:
-            turb['ustar_fit_log'] = np.NaN
-            turb['ustarc'] = np.NaN
-            turb['z0c'] = np.NaN
-            turb['r2ustarlog'] = np.NaN
-            turb['r2ustarc'] = np.NaN
-            turb['ustarcw'] = np.NaN
-            turb['z0cw'] = np.NaN
-            turb['r2cw'] = np.NaN
-            turb['dc'] = np.nan
-        except TypeError:
-            turb['ustar_fit_log'] = np.NaN
-            turb['ustarc'] = np.NaN
-            turb['z0c'] = np.NaN
-            turb['r2ustarlog'] = np.NaN
-            turb['r2ustarc'] = np.NaN
-            turb['ustarcw'] = np.NaN
-            turb['z0cw'] = np.NaN
-            turb['r2cw'] = np.NaN
-            turb['dc'] = np.nan
-        except RuntimeError:
-            turb['ustar_fit_log'] = np.NaN
-            turb['ustarc'] = np.NaN
-            turb['z0c'] = np.NaN
-            turb['r2ustarlog'] = np.NaN
-            turb['r2ustarc'] = np.NaN
-            turb['ustarcw'] = np.NaN
-            turb['z0cw'] = np.NaN
-            turb['r2cw'] = np.NaN
-            turb['dc'] = np.nan
-        except IndexError:
-            turb['ustar_fit_log'] = np.NaN
-            turb['ustarc'] = np.NaN
-            turb['z0c'] = np.NaN
-            turb['r2ustarlog'] = np.NaN
-            turb['r2ustarc'] = np.NaN
-            turb['ustarcw'] = np.NaN
-            turb['z0cw'] = np.NaN
-            turb['r2cw'] = np.NaN
-            turb['dc'] = np.nan
-    else:
-        turb['ustar_fit_log'] = np.nan
-       # turb['z0_fit_log'] = np.nan
-        turb['ustar_grad'] = np.nan
-        turb['vstar_grad'] = np.nan
-        turb['ustarc'] = np.nan
-        turb['z0c'] = np.nan
-        turb['ustarcw'] = np.nan
-        turb['z0cw'] = np.nan
-        turb['r2z0'] = np.nan
-        turb['r2ustar'] = np.nan
-        turb['r2c'] = np.nan
-        turb['r2cw'] = np.nan
-        turb['ustar_offset'] = np.nan
-        turb['r2ustarc'] = np.nan
-        turb['r2ustarlog'] = np.nan
-        turb['dc'] = np.nan
+        ustarvsl = np.sqrt(1e-6*scipy.stats.linregress(zfit[-3:],ufit[-3:])[0])
+        intercept = scipy.stats.linregress(zfit[-3:],ufit[-3:])[1]
     
-        nearbed = vectrino_kk['z'][vectrino_kk['z'] > 0].size - 1
+        Plog,Pcov = scipy.optimize.curve_fit(loglaw,zfit[:-2],ufit[:-2],p0 = (0.01,1e-5,hc),maxfev = 10000)
         
-        if np.size(np.shape(turb['uw1'])) == 2:
-            turb['ustar1'] = np.sqrt(np.abs(turb['uw1'][nearbed,:]))
-            turb['ustar2'] = np.sqrt(np.abs(turb['uw2'][nearbed,:]))
-            turb['vstar1'] = np.sqrt(np.abs(turb['vw1'][nearbed,:]))
-            turb['vstar2'] = np.sqrt(np.abs(turb['vw2'][nearbed,:]))
+        logfit = (Plog[0]/.41)*np.log((zfit)/Plog[1])
+        logerror = np.abs(logfit - ufit)
+    
+        linfit = (ustarvsl**2)*(zfit)/1e-6 + intercept
+        linerror = np.abs(linfit - ufit)
         
-        elif np.size(np.shape(turb['uw1']))==1:
-            turb['ustar1'] = np.sqrt(np.abs(turb['uw1'][nearbed]))
-            turb['ustar2'] = np.sqrt(np.abs(turb['uw2'][nearbed]))
-            turb['vstar1'] = np.sqrt(np.abs(turb['vw1'][nearbed]))
-            turb['vstar2'] = np.sqrt(np.abs(turb['vw2'][nearbed]))
+        #Starting log fit wherever the linear VSL profile becomes a worse fit
+        evec = np.where(logerror<linerror)[0]
+        if np.size(evec) == 0:
+            logstart = 3
+        else:
+            logstart = np.where(logerror<linerror)[0][-1]
+        
+        turb['ustar_vsl'] = ustarvsl
+        
+
+        #Fitting for log ustar
+        Plog,Pcov = scipy.optimize.curve_fit(loglaw,zfit[:logstart + 1],ufit[:logstart + 1],p0 = (0.01,1e-5,hc/2),
+                                              maxfev = 10000, bounds = (1e-7,[.04,1e-2,hc]))
+        
+        turb['ustarc'] = Plog[0]
+        turb['z0c'] = Plog[1]
+        turb['dc'] = Plog[2]
+        
+        turb['r2ustarvsl'] = scipy.stats.linregress(zfit[-3:],ufit[-3:])[2]**2
+        turb['r2ustarc'] = get_r2(loglaw,zfit[:logstart + 1],ufit[:logstart + 1],Plog)
+
+    except ValueError:
+        turb['ustar_vsl'] = np.NaN
+        turb['ustarc'] = np.NaN
+        turb['z0c'] = np.NaN
+        turb['r2ustarvsl'] = np.NaN
+        turb['r2ustarc'] = np.NaN
+        turb['dc'] = np.nan
+    except TypeError:
+        turb['ustar_vsl'] = np.NaN
+        turb['ustarc'] = np.NaN
+        turb['z0c'] = np.NaN
+        turb['r2ustarlog'] = np.NaN
+        turb['r2ustarc'] = np.NaN
+        turb['dc'] = np.nan
+    except RuntimeError:
+        turb['ustar_vsl'] = np.NaN
+        turb['ustarc'] = np.NaN
+        turb['z0c'] = np.NaN
+        turb['r2ustarlog'] = np.NaN
+        turb['r2ustarc'] = np.NaN
+        turb['dc'] = np.nan
+    except IndexError:
+        turb['ustar_vsl'] = np.NaN
+        turb['ustarc'] = np.NaN
+        turb['z0c'] = np.NaN
+        turb['r2ustarlog'] = np.NaN
+        turb['r2ustarc'] = np.NaN
+        turb['dc'] = np.nan
+
+    
 
     return turb
-
-#def equations(p,i,turb,ai,var13,var24):
-#    v1v1,v2v2,v3v3,v4v4,v1v2,v1v3,v1v4,v2v3,v2v4,v3v4 = p
-#    return (turb['uu'][i] - (ai[0,0]**2)*(v1v1 + var13) -(ai[0,1]**2)*(v2v2 + var24)
-#            -(ai[0,2]**2)*(v3v3 +var13) - (ai[0,3]**2)*(v4v4+var24)-(2*ai[0,0]*ai[0,1]*v1v2)-
-#            (2*ai[0,0]*ai[0,2]*v1v3)-(2*ai[0,0]*ai[0,3]*v1v4)-(2*ai[0,1]*ai[0,2]*v2v3)-
-#            (2*ai[0,1]*ai[0,3]*v2v4) - (2*ai[0,2]*ai[0,3]*v3v4),
-#
-#            turb['vv'][i] - (ai[1,0]**2)*(v1v1 + var13) -(ai[1,1]**2)*(v2v2 + var24)
-#            -(ai[1,2]**2)*(v3v3 +var13) - (ai[1,3]**2)*(v4v4+var24)-(2*ai[1,0]*ai[1,1]*v1v2)-
-#            (2*ai[1,0]*ai[1,2]*v1v3)-(2*ai[1,0]*ai[1,3]*v1v4)-(2*ai[1,1]*ai[1,2]*v2v3)-
-#            (2*ai[1,1]*ai[1,3]*v2v4) - (2*ai[1,2]*ai[1,3]*v3v4),
-#            
-#            turb['w1w1'][i]-(ai[2,0]**2)*(v1v1 + var13) -(ai[2,1]**2)*(v2v2 + var24)
-#            -(ai[2,2]**2)*(v3v3 +var13) - (ai[2,3]**2)*(v4v4+var24)-(2*ai[2,0]*ai[2,1]*v1v2)-
-#            (2*ai[2,0]*ai[2,2]*v1v3)-(2*ai[2,0]*ai[2,3]*v1v4)-(2*ai[2,1]*ai[2,2]*v2v3)-
-#            (2*ai[2,1]*ai[2,3]*v2v4) - (2*ai[2,2]*ai[2,3]*v3v4),
-#            
-#            turb['w2w2'][i]-(ai[3,0]**2)*(v1v1 + var13) -(ai[3,1]**2)*(v2v2 + var24)
-#            -(ai[3,2]**2)*(v3v3 +var13) - (ai[3,3]**2)*(v4v4+var24)-(2*ai[3,0]*ai[3,1]*v1v2)-
-#            (2*ai[3,0]*ai[3,2]*v1v3)-(2*ai[3,0]*ai[3,3]*v1v4)-(2*ai[3,1]*ai[3,2]*v2v3)-
-#            (2*ai[3,1]*ai[3,3]*v2v4) - (2*ai[3,2]*ai[3,3]*v3v4),
-#            
-#            turb['uv'][i] - (ai[0,0]*ai[1,0])*(v1v1 + var13) -(ai[0,1]*ai[1,1])*(v2v2 + var24)
-#            -(ai[0,2]*ai[1,2])*(v3v3 +var13) - (ai[0,3]*ai[1,3])*(v4v4+var24)-((ai[0,0]*ai[1,1]+ai[0,1]*ai[1,0])*v1v2)-
-#            ((ai[0,0]*ai[1,2]+ai[0,2]*ai[1,0])*v1v3)-((ai[0,0]*ai[1,3]+ai[1,0]*ai[0,3])*v1v4)-((ai[0,2]*ai[1,1] + ai[0,1]*ai[1,2])*v2v3)-
-#            ((ai[0,1]*ai[1,3]+ai[1,1]*ai[0,3])*v2v4) - ((ai[0,2]*ai[1,3]+ai[1,2]*ai[0,3])*v3v4),
-#            
-#            turb['uw1'][i] - (ai[0,0]*ai[2,0])*(v1v1 + var13) -(ai[0,1]*ai[2,1])*(v2v2 + var24)
-#            -(ai[0,2]*ai[2,2])*(v3v3 +var13) - (ai[0,3]*ai[2,3])*(v4v4+var24)-((ai[0,0]*ai[2,1]+ai[0,1]*ai[2,0])*v1v2)-
-#            ((ai[0,0]*ai[2,2]+ai[0,2]*ai[2,0])*v1v3)-((ai[0,0]*ai[2,3]+ai[2,0]*ai[0,3])*v1v4)-((ai[0,2]*ai[2,1] + ai[0,1]*ai[2,2])*v2v3)-
-#            ((ai[0,1]*ai[2,3]+ai[2,1]*ai[0,3])*v2v4) - ((ai[0,2]*ai[2,3]+ai[2,2]*ai[0,3])*v3v4),
-#            
-#            turb['uw2'][i] - (ai[0,0]*ai[3,0])*(v1v1 + var13) -(ai[0,1]*ai[3,1])*(v2v2 + var24)
-#            -(ai[0,2]*ai[3,2])*(v3v3 +var13) - (ai[0,3]*ai[3,3])*(v4v4+var24)-((ai[0,0]*ai[3,1]+ai[0,1]*ai[3,0])*v1v2)-
-#            ((ai[0,0]*ai[3,2]+ai[0,2]*ai[3,0])*v1v3)-((ai[0,0]*ai[3,3]+ai[3,0]*ai[0,3])*v1v4)-((ai[0,2]*ai[3,1] + ai[0,1]*ai[3,2])*v2v3)-
-#            ((ai[0,1]*ai[3,3]+ai[3,1]*ai[0,3])*v2v4) - ((ai[0,2]*ai[3,3]+ai[3,2]*ai[0,3])*v3v4),
-#            
-#            turb['vw1'][i] - (ai[1,0]*ai[2,0])*(v1v1 + var13) -(ai[1,1]*ai[2,1])*(v2v2 + var24)
-#            -(ai[1,2]*ai[2,2])*(v3v3 +var13) - (ai[1,3]*ai[2,3])*(v4v4+var24)-((ai[1,0]*ai[2,1]+ai[1,1]*ai[2,0])*v1v2)-
-#            ((ai[1,0]*ai[2,2]+ai[1,2]*ai[2,0])*v1v3)-((ai[1,0]*ai[2,3]+ai[2,0]*ai[1,3])*v1v4)-((ai[1,2]*ai[2,1] + ai[1,1]*ai[2,2])*v2v3)-
-#            ((ai[1,1]*ai[2,3]+ai[2,1]*ai[1,3])*v2v4) - ((ai[1,2]*ai[2,3]+ai[2,2]*ai[1,3])*v3v4),
-#            
-#            turb['vw2'][i] - (ai[1,0]*ai[3,0])*(v1v1 + var13) -(ai[1,1]*ai[3,1])*(v2v2 + var24)
-#            -(ai[1,2]*ai[3,2])*(v3v3 +var13) - (ai[1,3]*ai[3,3])*(v4v4+var24)-((ai[1,0]*ai[3,1]+ai[1,1]*ai[3,0])*v1v2)-
-#            ((ai[1,0]*ai[3,2]+ai[1,2]*ai[3,0])*v1v3)-((ai[1,0]*ai[3,3]+ai[3,0]*ai[1,3])*v1v4)-((ai[1,2]*ai[3,1] + ai[1,1]*ai[3,2])*v2v3)-
-#            ((ai[1,1]*ai[3,3]+ai[3,1]*ai[1,3])*v2v4) - ((ai[1,2]*ai[3,3]+ai[3,2]*ai[1,3])*v3v4),
-#            
-#            turb['w1w2'][i] - (ai[2,0]*ai[3,0])*(v1v1 + var13) -(ai[2,1]*ai[3,1])*(v2v2 + var24)
-#            -(ai[2,2]*ai[3,2])*(v3v3 +var13) - (ai[2,3]*ai[3,3])*(v4v4+var24)-((ai[2,0]*ai[3,1]+ai[2,1]*ai[3,0])*v1v2)-
-#            ((ai[2,0]*ai[3,2]+ai[2,2]*ai[3,0])*v1v3)-((ai[2,0]*ai[3,3]+ai[3,0]*ai[2,3])*v1v4)-((ai[2,2]*ai[3,1] + ai[2,1]*ai[3,2])*v2v3)-
-#            ((ai[2,1]*ai[3,3]+ai[3,1]*ai[2,3])*v2v4) - ((ai[2,2]*ai[3,3]+ai[3,2]*ai[2,3])*v3v4))
-    
-            #Calling it (do this in another function)
-            
-                        
-#            v1v1,v2v2,v3v3,v4v4,v1v2,v1v3,v1v4,v2v3,v2v4,v3v4 = scipy.optimize.fsolve(equations,(1e-5,1e-5,1e-5,1e-5,-1e-5,
-#                                                                                  -1e-5,-1e-5,-1e-5,-1e-5,1e-5),args = (
-#                                                                                        i,turb,ai,var13,var24),xtol = 1e-12)
 
 
 def noise_correction(turb):
@@ -903,61 +646,89 @@ def noise_correction(turb):
         
     return RScorr
 
-def get_dissipation(vectrino,fs,method):
-    
-    if method == 'structure':
-        
-        probe = 'w2'
-        #Calculating w_prime
-        m,n = np.shape(vectrino[probe])
-        wp = np.zeros((m,n))
-        wbar = np.nanmean(vectrino[probe],axis = 1)
-        for ii in range(n):
-            wp[:,ii] = vectrino[probe][:,ii] - wbar
-        
-        z = vectrino['z']
-        z = z[z>0]
-        dz = np.diff(z)
-        
-        #Want at least 5 above/below following Truleo
-        zeps = z[5:-5]
-        eps = np.zeros((len(zeps),))
-#        D = np.zeros((len(zeps),5))
-#        r = np.arange(2,12,2)*np.abs(dz[0])
-        def structfunc(r,N,A):
-            return N + A*(r**(2/3))        
-        
-        for ii in range(len(zeps)):
-            idx = np.argmin(np.abs(z-zeps[ii]))
-            numr = np.min([np.sum(np.arange(len(z))>idx), np.sum(np.arange(len(z)) < idx)])
-            
-            r = np.linspace(2,2*numr,numr)*np.abs(dz[0])
-            D = np.empty_like(r)
-            for jj in range(len(r)):
-                D[jj] = np.nanmean((wp[idx-jj,:] - wp[idx+jj,:])**2)
-                
-            try:
-                p0, cov = scipy.optimize.curve_fit(structfunc,r,D, p0 = (1e-5,1e-3),maxfev = 10000)
-                N = p0[0]
-                A = p0[1]
-                eps[ii] = (A/2.1)**(3/2)
-                
-##                #Test plotting
-#                plt.figure(ii)
-#                plt.plot(r,D,'k*')
-#                plt.plot(r,N + A*(r**(2/3)),'r:')     
-            except RuntimeError:
-                print('Curve fit failed')
-                eps[ii] = np.NaN
-            except TypeError:
-                print('Curve fit failed')
-                eps[ii] = np.NaN
+def get_dissipation(vectrino,fs,method):   
 
-        return eps,zeps
+    """Estimates dissipation based on one of various methods. Takes as input a python dictionary
+    that contains 2D arrays of major, minor, and vertical components of velocity, along with the sampling
+    frequency and a string to indicate method choice. This calculates dissipation over a profile because it
+    was used for a Vectrino Profiler, but should be easily adapted to a point ADV"""
+
+    if method == 'Fedd07':
+        
+        """Feddersen et al 2007"""
+        def calcFeddA6(sig1,sig2,sig3,u1,u2,omega):
+            arrlen = 120
+            rho = np.logspace(-2,4,arrlen)
+            theta = np.linspace(-np.pi,np.pi,arrlen/10)
+            phi = np.linspace(-np.pi/2,np.pi/2,arrlen/10)
+                    
+            #This way is pretty slow but I think it works
+            I3 = np.zeros((len(theta),len(phi),len(rho)))
+            for jj in range(len(phi)):
+                for kk in range(len(rho)):
+                    gamma = np.sqrt((np.cos(phi[jj])**2)*(((np.cos(theta)**2)/sig1**2) + ((np.sin(theta)**2)/sig2**2))
+                        + ((np.sin(phi[jj])**2)/(sig3**2)) )
+                    ksquare = (gamma**2)*(rho[kk]**2)
+                    k3 = rho[kk]*np.sin(phi[jj])/sig3
+                    
+                    I3[:,jj,kk] = (gamma**(-11./3))*(1-(k3*k3/ksquare))*np.exp((-(rho[kk]*np.cos(phi[jj])*(
+                        (np.cos(theta)*u1/sig1) + (np.sin(theta)*u2/sig2))-omega)**2)/(2*rho[kk]**2))*(
+                        np.cos(phi[jj])/(sig1*sig2*sig3))
+            I2 = np.trapz(I3,theta,axis = 0)
+            
+            I1 = np.trapz(I2,phi,axis = 0)
+
+            M33 = np.trapz(rho**(-8./3)*I1,rho)
+            return M33
+        
+        m,n = np.shape(vectrino['velmaj'])
+        
+        eps = np.zeros((m,))
+        omega_range = [2*np.pi*4,2*np.pi*6] #Inertial subrange 
+        alpha = 1.5
+            
+        for ii in range(m):
+            u = vectrino['velmaj'][ii,:]
+            v = vectrino['velmin'][ii,:]
+            w = vectrino['w1'][ii,:]
+            
+            if np.sum(np.isnan(u)) < len(u)/2:
+            
+                fw,Pw = sig.welch(w,fs = fs, window = 'hamming', nperseg = len(w)//20,
+                                      detrend = 'linear')
+
+                omega = 2*np.pi*fw
+                
+                inds = (omega > omega_range[0]) & (omega < omega_range[1])
+                omega = omega[inds]
+                Pw = (Pw[inds])/(2*np.pi)
+              
+                sig1 = np.std(u)
+                sig2 = np.std(v)
+                sig3 = np.std(w)
+                
+                u1 = np.abs(np.nanmean(u))
+                u2 = np.abs(np.nanmean(v))
+                
+                
+                M33 = np.zeros_like(omega)
+                for jj in range(len(omega)): 
+                    M33[jj] = calcFeddA6(sig1,sig2,sig3,u1,u2,omega[jj])
+                
+                epsomega = ((Pw*2*(2*np.pi)**(3/2))/(alpha*M33))**(3/2)
+                
+                eps[ii] = np.nanmean(epsomega)
+        
+        return eps
     
     elif method == 'TE01':
         
+        """Trowbridge & Elgar 2001, much of this code taken from Dolfyn package
+        reworked for Vectrino Profiler"""
+        
+        
         def calcA13(sigV,theta):
+        #Integral from appendix
            x = np.arange(-20,20,1e-2)
            out = np.empty_like(sigV.flatten())
            for i, (b,t) in enumerate(zip(sigV.flatten(),theta.flatten())):
@@ -965,7 +736,7 @@ def get_dissipation(vectrino,fs,method):
                   b ** (-2)) *np.exp(-0.5 * x ** 2), x)
         
            return out.reshape(sigV.shape)*(2*np.pi)**(-0.5) * sigV**(2/3)
-       
+  
         def up_angle(u,v):
             Uh = naninterp(u) + 1j*naninterp(v)
             dt = sig.detrend(Uh)
@@ -981,16 +752,13 @@ def get_dissipation(vectrino,fs,method):
         m,n = np.shape(vectrino['velmaj'])
         
         eps = np.zeros((m,))
-        omega_range = [2*np.pi*3,2*np.pi*8]
-        #omega_range = [2*np.pi*4,2*np.pi*9]
-        #omega_range = [2*np.pi*2,2*np.pi*3]
-        #omega_range = [2*np.pi*1.2,2*np.pi*2]
-        
-        
+        omega_range = [2*np.pi*4,2*np.pi*6] #Customize this based on instrument and spectra
+   
         for ii in range(m):
             u = vectrino['velmaj'][ii,:]
             v = vectrino['velmin'][ii,:]
             w = vectrino['w1'][ii,:]
+            
             
             if np.sum(np.isnan(u)) < len(u)/2:
                 V = np.sqrt(np.nanmean(u**2 + v**2))
@@ -999,37 +767,32 @@ def get_dissipation(vectrino,fs,method):
                 thetaup = up_angle(u,v)
                 thetaU = U_angle(u,v)
                 theta = thetaU - thetaup
-                #theta = np.float64(2.9518194282896255)
                 
                 alpha = 1.5
                 intgrl = calcA13(sigma/V,theta)
                 
-                fu,Pu = sig.welch(u,fs = fs, window = 'hamming', nperseg = len(u)//100,
+                fu,Pu = sig.welch(u,fs = fs, window = 'hamming', nperseg = len(u)//20,
                                   detrend = 'linear')
-                fv,Pv = sig.welch(v,fs = fs, window = 'hamming', nperseg = len(v)//100,
+                fv,Pv = sig.welch(v,fs = fs, window = 'hamming', nperseg = len(v)//20,
                                   detrend = 'linear')
-                fw,Pw = sig.welch(w,fs = fs, window = 'hamming', nperseg = len(w)//100,
+                fw,Pw = sig.welch(w,fs = fs, window = 'hamming', nperseg = len(w)//20,
                                   detrend = 'linear')
                 
-                noiserange = (fu>=20) & (fu<=30)
-                #noiserange = (fu >= 3) & (fu <= 6)
+                noiserange = (fu>=20) & (fu<=30) #Customize this based on instrument and spectra
                 noiselevel = np.nanmean(Pu[noiserange] + Pv[noiserange])
                 
                 omega = 2*np.pi*fu
                 inds = (omega > omega_range[0]) & (omega < omega_range[1])
                 omega = omega[inds]
-                Pu = Pu[inds]
-                Pv = Pv[inds]
-                Pw = Pw[inds]
+                Pu = Pu[inds]/(2*np.pi)
+                Pv = Pv[inds]/(2*np.pi)
+                Pw = Pw[inds]/(2*np.pi)
                 
-#                R = (12/21)*np.nanmean((omega**(5/3))*(Pu+Pv - noiselevel))/(
-#                        np.nanmean((omega**(5/3))*Pw))
-#                print(R)
                 uv = (np.mean((Pu + Pv - noiselevel)*(omega)**(5/3))/
                       (21/55*alpha*intgrl))**(3/2)/V
-#                      
+                      
                 #Adding w component
-                uv = (np.mean((Pw)*(omega)**(5/3))/
+                uv += (np.mean((Pw)*(omega)**(5/3))/
                       (12/55*alpha*intgrl))**(3/2)/V
                 
                # Averaging
@@ -1041,6 +804,9 @@ def get_dissipation(vectrino,fs,method):
         return eps
     
     elif method == 'full':
+        
+        """Calculating based on velocity gradients w/ frozen turbulence assumption.
+        Probably a bad idea, wouldn't use"""
     
         u = vectrino['velmaj']
         v = vectrino['velmin']
@@ -1068,9 +834,9 @@ def get_dissipation(vectrino,fs,method):
                     bv,av = sig.butter(2,fvmax/(fs/2))
                     bw,aw = sig.butter(2,fwmax/(fs/2))
                 except ValueError:
-                    bu,au = sig.butter(2,.35/32)
-                    bv,av = sig.butter(2,.35/32)
-                    bw,aw = sig.butter(2,.35/32)
+                    bu,au = sig.butter(2,.35/(fs/2))
+                    bv,av = sig.butter(2,.35/(fs/2))
+                    bw,aw = sig.butter(2,.35/(fs/2))
 
                 
                 ufilt = sig.filtfilt(bu,au,u[ii,:])
@@ -1087,9 +853,9 @@ def get_dissipation(vectrino,fs,method):
         dvdz = np.gradient(vp,np.diff(vectrino['z'])[0],edge_order = 2 , axis = 0)
         dwdz = np.gradient(wp,np.diff(vectrino['z'])[0],edge_order = 2 , axis = 0)
         
-        dudt = np.gradient(up,(1./64),edge_order = 2, axis = 1)
-        dvdt = np.gradient(vp,(1./64),edge_order = 2, axis = 1)
-        dwdt = np.gradient(wp,(1./64),edge_order = 2, axis = 1)
+        dudt = np.gradient(up,(1./fs),edge_order = 2, axis = 1)
+        dvdt = np.gradient(vp,(1./fs),edge_order = 2, axis = 1)
+        dwdt = np.gradient(wp,(1./fs),edge_order = 2, axis = 1)
         
         dudx = np.empty_like(dudz)
         dudy = np.empty_like(dudz)
@@ -1124,7 +890,10 @@ def get_dissipation(vectrino,fs,method):
         
         return eps
     
-    if method == 'scaling':
+    elif method == 'scaling':
+        
+        """scaling estimate based on integral length scales"""
+        
         u = vectrino['velmaj']
         
         Tint, Lint, uprime = IntScales(u,fs)
@@ -1136,6 +905,9 @@ def get_dissipation(vectrino,fs,method):
         
 
 def IntScales(u,fs):
+    
+    """Integral length scales for estimating dissipation"""
+    
     m,n = np.shape(u)
     
     ubar = np.nanmean(u,axis = 1)
@@ -1148,7 +920,7 @@ def IntScales(u,fs):
             try:
                 bu,au = sig.butter(2,fumax/(fs/2))
             except ValueError:
-                bu,au = sig.butter(2,.35/32)
+                bu,au = sig.butter(2,.35/(fs/2))
             ufilt = sig.filtfilt(bu,au,u[ii,:])
             up[ii,:] = u[ii,:] - ufilt
         
@@ -1165,12 +937,14 @@ def IntScales(u,fs):
             Lint[ii] = Tint[ii]*ubar[ii]
     
     uprime = np.sqrt(np.nanvar(up, axis = 1))
-        #lags, r = xcorr(up[ii,:],u[ii,:],normed = True,maxlags = len(up))
+
     
     return Tint, Lint, uprime
     
             
-def despikeGN(velarray):
+def despikeGN(velarray,fs):
+    
+    """Goring & Nikora ADV despiking algorithm"""
     
     def ellipsoid_3d_outlier(xi,yi,zi,theta):
         n = len(xi)
@@ -1239,8 +1013,8 @@ def despikeGN(velarray):
             u_mean = u_mean + np.nanmean(u)
             u  = u - np.nanmean(u)
             
-            ut = np.gradient(u,(1./64),edge_order = 2)
-            utt = np.gradient(ut,(1./64),edge_order = 2)
+            ut = np.gradient(u,(1./fs),edge_order = 2)
+            utt = np.gradient(ut,(1./fs),edge_order = 2)
             
             if (n_loop == 1):
                 theta = np.arctan2(np.sum(u*utt),np.sum(u**2))
@@ -1258,12 +1032,4 @@ def despikeGN(velarray):
         uo = naninterp(go)
         velout[ii,:] = uo
     return indout, velout
-            
-            
-            
-        
-        
-        
-        
-            
-            
+         

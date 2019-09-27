@@ -6,35 +6,22 @@ Created on Fri Oct 27 14:13:37 2017
 """
 #Reads in data from the Vectrino II profiler
 
-#Packages
-import os
-parentDir = os.path.abspath(os.path.join(os.getcwd(), os.pardir))
-
-import sys
-sys.path.append(parentDir + '/General/')
-
-import copy
 import datetime
 import glob
-import matplotlib.pyplot as plt
-import matplotlib.dates as md
 import numpy as np
 import scipy.io as sio
-import scipy.signal as sig
-import scipy.ndimage 
 import vecfuncs
-import pandas as pd
-import mylib
-
 
 #Constants
-x_heading = 185.
+x_heading = 185. #Compass heading on x probe 
 vertical_orientation = 'down'
-corr_min = 10.
-snr_min = 20
-filtstyle = 'butter'
+corr_min = 10.  #Minimum beam correlation
+snr_min = 20    #Minimum SNR
+dissmethod = 'Fedd07'
 wavedecomp = True
 fs = 64
+savepath = ''
+dateidx = list(range(56,73)) #Indices in filename corresponding to unix time
 
 #%%Loading in data and assigning to variables
 filepath = ''
@@ -67,7 +54,7 @@ for ii in range(len(burstind)-1):
         Config2 = matdata2[list(matdata2.keys())[4]]
  
         #Time 
-        tstart = datetime.datetime.fromtimestamp(int(files[idx][56:72])/1e6)
+        tstart = datetime.datetime.fromtimestamp(int(files[idx][dateidx])/1e6)
         dt = np.concatenate((Data1['Profiles_HostTime'].item().squeeze().T,
                              Data2['Profiles_HostTime'].item().squeeze().T))
         t = tstart+datetime.timedelta(seconds=1)*dt
@@ -113,7 +100,7 @@ for ii in range(len(burstind)-1):
         Config1 = matdata1[list(matdata1.keys())[4]]
         
         #Time 
-        tstart = datetime.datetime.fromtimestamp(int(files[idx][56:72])/1e6)
+        tstart = datetime.datetime.fromtimestamp(int(files[idx][dateidx])/1e6)
         dt = Data1['Profiles_HostTime'].item().squeeze().T
         t = tstart+datetime.timedelta(seconds=1)*dt
         t = t + datetime.timedelta(hours = 7) - datetime.timedelta(seconds = dt[-1])
@@ -199,7 +186,8 @@ for ii in range(len(burstind)-1):
     vectrino['w2'][badidx4] = np.NaN      
     
 
-    #Calculating principal axis rotation
+    #Calculating principal axis rotation based on data burst. Should ideally use
+    # a constant theta based on long term ADCP data
     theta =  vecfuncs.pa_theta(np.nanmean(vectrino['u'],axis=0),
             np.nanmean(vectrino['v'],axis=0))
     vectrino['theta'] = theta
@@ -207,94 +195,26 @@ for ii in range(len(burstind)-1):
     vectrino['velmaj'], vectrino['velmin'] = vecfuncs.pa_rotation(
             vectrino['u'],vectrino['v'],vectrino['theta'])
     
-    #Low-pass filtering the velocity and pressure data and placing in separate 
-    #structure 
-    
-    fc = 1./30 #Cutoff frequency for fourier and butterworth filters
-    filt_kernel =  (3,9) #kernel for median filter
 
-#    # Method 1--fourier filter
-#    if filtstyle == 'fourier':
-#
-#        vectrino_filt[ii]['u'] = vecfuncs.lpf(vectrino['u'],
-#                fs,fc) 
-#        
-#        vectrino_filt[ii]['v'] = vecfuncs.lpf(vectrino['v'],
-#                fs,fc) 
-#        
-#        vectrino_filt[ii]['w1'] = vecfuncs.lpf(vectrino['w1'],
-#                fs,fc) 
-#        
-#        vectrino_filt[ii]['w2'] = vecfuncs.lpf(vectrino['w2'],
-#                fs,fc) 
-#
-#    #Method 2: median filter 
-#    elif filtstyle == 'median':
-#    
-#        #filt_kernel = 9
-#        vectrino_filt[ii]['u'] = scipy.ndimage.filters.median_filter(vectrino['u'],
-#                     size = filt_kernel,mode = 'nearest')
-#        vectrino_filt[ii]['v'] = scipy.ndimage.filters.median_filter(vectrino['v'],
-#                     size = filt_kernel,mode = 'nearest')
-#        vectrino_filt[ii]['w1'] = scipy.ndimage.filters.median_filter(vectrino['w1'],
-#                     size = filt_kernel,mode = 'nearest')
-#        vectrino_filt[ii]['w2'] = scipy.ndimage.filters.median_filter(vectrino['w2'],
-#                     size = filt_kernel,mode = 'nearest')
-#        vectrino_filt[ii]['velmaj'] = scipy.ndimage.filters.median_filter(vectrino['velmaj'],
-#                     size = filt_kernel,mode = 'nearest')
-#        vectrino_filt[ii]['velmin'] = scipy.ndimage.filters.median_filter(vectrino['velmin'],
-#                     size = filt_kernel,mode = 'nearest')
-#        vectrino_filt[ii]['SSC'] = scipy.ndimage.filters.median_filter(vectrino['SSC'],
-#                     size = filt_kernel[1],mode = 'nearest')
-#        
-#    elif filtstyle == 'butter':
-#        Wn = fc/(fs/2)
-#        b,a = sig.butter(2,Wn,btype = 'low')
-#        vectrino_filt[ii]['u'] = np.empty(np.shape(vectrino['u']))
-#        vectrino_filt[ii]['v'] = np.empty(np.shape(vectrino['v']))
-#        vectrino_filt[ii]['w1'] = np.empty(np.shape(vectrino['w1']))
-#        vectrino_filt[ii]['w2'] = np.empty(np.shape(vectrino['w2']))
-#        vectrino_filt[ii]['velmaj'] = np.empty(np.shape(vectrino['velmaj']))
-#        vectrino_filt[ii]['velmin'] = np.empty(np.shape(vectrino['velmin']))
-#        
-#        for jj in range(np.size(vrange)):
-#            u = mylib.naninterp(vectrino['u'][jj,:])
-#            v = mylib.naninterp(vectrino['v'][jj,:])
-#            w1 = mylib.naninterp(vectrino['w1'][jj,:])
-#            w2 = mylib.naninterp(vectrino['w2'][jj,:])
-#            velmaj = mylib.naninterp(vectrino['velmaj'][jj,:])
-#            velmin = mylib.naninterp(vectrino['velmin'][jj,:])
-#            vectrino_filt[ii]['u'][jj,:] = sig.filtfilt(b,a,u)
-#            vectrino_filt[ii]['v'][jj,:] = sig.filtfilt(b,a,v)
-#            vectrino_filt[ii]['w1'][jj,:] = sig.filtfilt(b,a,w1)
-#            vectrino_filt[ii]['w2'][jj,:] = sig.filtfilt(b,a,w2)
-#            vectrino_filt[ii]['velmaj'][jj,:] = sig.filtfilt(b,a,velmaj)
-#            vectrino_filt[ii]['velmin'][jj,:] = sig.filtfilt(b,a,velmin)
+    #Calculating Reynolds stress tensor
 
+    #Use the phase method if there is wave contamination 
+    if wavedecomp:
+        waveturb = vecfuncs.get_turb_waves(vectrino,fs)
     
-    # Calculating Reynolds stress tensor
-
-#    #Can choose either phase method or benilov method. Benilov requires pressure data. 
-#    if wavedecomp:
-#        method = 'phase'
-#        waveturb[ii] = vecfuncs.get_turb_waves(vectrino,fs,method)
-#    
-#    #Can change filtstyle to nofilt to calculate reynolds stress based solely on covariance (i.e. one data point per burst per cell)
-#   
-#    #Calculating other turbulence statistics, including non wave-decomposed covariances
-#    # and log law fitting
-#    filt_style_cov = 'nofilt'
-#    turb[ii] = vecfuncs.get_turb(vectrino,vectrino_filt[ii],fs,fc,filt_kernel,filt_style_cov)
-#        
-##    #Correcting with Thomas et al 2017. Only do this if reynolds stress calculation
-##    #gives one value per burst (i.e. wave turbulence decomposition, or nofilt covariance method)
-#    RScorr[ii] = vecfuncs.noise_correction(turb[ii])
+    #Calculating other turbulence statistics, including non wave-decomposed covariances
+    # and log law fitting
+    turb = vecfuncs.get_turb(vectrino,fs)
+        
+    #Correcting with Thomas et al 2017
+    RScorr = vecfuncs.noise_correction(turb[ii])
     
-    #Saving the data...there's a bug in pickle that doesn't allow saving the entire thing 
-        #because it's too big. So saving each burst individually
-#    
-    np.save('/Volumes/TOURO S/Deployment1/Vectrino/npyfix/vectrino_'+str(ii),vectrino)
-#    np.save('/Volumes/TOURO S/Deployment1/Vectrino/npyfix/vectrinofilt_'+str(ii),vectrino_filt[ii])
-#    np.save('/Volumes/TOURO S/Deployment1/Vectrino/npyfix/waveturb_'+str(ii),waveturb[ii])
-#    np.save('/Volumes/TOURO S/Deployment1/Vectrino/npyfix/turb_'+str(ii),turb[ii])
-#    np.save('/Volumes/TOURO S/Deployment1/Vectrino/npyfix/RScorr_'+str(ii),RScorr[ii])  
+    #Dissipation
+    diss = vecfuncs.get_dissipation(vectrino,fs,dissmethod)
+    
+    #Now save everything, e.g.
+    np.save(savepath + 'vectrino_' + str(ii) + '.npy')
+    np.save(savepath + 'waveturb_' + str(ii) + '.npy')
+    np.save(savepath + 'turb_' + str(ii) + '.npy')
+    np.save(savepath + 'RScorr_' + str(ii) + '.npy')
+    np.save(savepath + 'diss_' + str(ii) + '.npy')
