@@ -1,11 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Mon May  7 11:47:07 2018
-
-@author: gegan
-"""
-
 """Functions for calculating wave spectra and other wave statistics. Based
 mostly on MATLAB code written by Falk Feddersen and Justin Rogers"""
 import os
@@ -128,7 +120,7 @@ def wave_stats_spectra(p,depth,nfft,doffp,fs,fc,rho):
     df = fs/(nfft-1) #frequency resolution
 
     
-    fm, Spp = sig.welch(P,fs = fs,window = 'hamming',nperseg = nfft,detrend = 'linear')
+    fm, Spp = sig.welch(P,fs = fs,window = 'hamming',nperseg = 256,detrend = 'linear')
     
     #Depth correction and spectral weighted averages
     f_ig_low = 1./250
