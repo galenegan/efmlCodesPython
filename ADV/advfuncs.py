@@ -831,4 +831,194 @@ def benilov(u,v,w,p,doffp,fs,fc,rho):
     B['fc'] = fc
     B['fs'] = fs
     
-    return B        
+    return B  
+
+
+def bm_phase(adv,fs):
+
+    """Wave turbulence decompsition based on Bricker & Monismith (2007)"""
+    
+    waveturb = dict()
+
+    
+    N = len(adv)
+    
+    #Turbulent reynolds stresses
+    waveturb['uw'] = np.empty((N,))*np.NaN
+    waveturb['vw'] = np.empty((N,))*np.NaN
+    waveturb['uv'] = np.empty((N,))*np.NaN
+    waveturb['uu'] = np.empty((N,))*np.NaN
+    waveturb['vv'] = np.empty((N,))*np.NaN
+    waveturb['ww'] = np.empty((N,))*np.NaN
+    
+    
+    #Wave reynolds stresses
+    waveturb['uw_wave'] = np.empty((N,))*np.NaN
+    waveturb['vw_wave'] = np.empty((N,))*np.NaN
+    waveturb['uv_wave'] = np.empty((N,))*np.NaN
+    waveturb['uu_wave'] = np.empty((N,))*np.NaN
+    waveturb['vv_wave'] = np.empty((N,))*np.NaN
+    waveturb['ww_wave'] = np.empty((N,))*np.NaN
+    
+    waveturb['time'] = np.empty((N,),dtype = datetime.datetime)
+        
+    
+    for ii in range(N):
+        advidx = ii + list(adv.keys())[0]
+       
+        u = copy.deepcopy(adv[advidx]['velmaj'])
+        v = copy.deepcopy(adv[advidx]['velmin'])
+        w = copy.deepcopy(adv[advidx]['velz'])
+        waveturb['time'][ii] = adv[advidx]['burststart']
+    
+        nfft = u.size
+        Amu = calculate_fft2(naninterp(u),nfft)
+        Amv = calculate_fft2(naninterp(v),nfft)
+        Amw = calculate_fft2(naninterp(w),nfft)
+        
+    
+        df = fs/(nfft-1)
+        nnyq = int(np.floor(nfft/2 +1))
+        fm = np.arange(0,nnyq)*df
+       
+    #    #Phase
+        Uph = np.arctan2(np.imag(Amu),np.real(Amu)).squeeze()[:nnyq]
+        Vph = np.arctan2(np.imag(Amv),np.real(Amv)).squeeze()[:nnyq]
+        Wph = np.arctan2(np.imag(Amw),np.real(Amw)).squeeze()[:nnyq]
+        
+    #    #Computing the full spectra
+    
+        Suu = np.real(Amu*np.conj(Amu))/(nnyq*df)
+        Suu = Suu.squeeze()[:nnyq]
+        
+        Svv = np.real(Amv*np.conj(Amv))/(nnyq*df)
+        Svv = Svv.squeeze()[:nnyq]
+        
+        Sww = np.real(Amw*np.conj(Amw))/(nnyq*df)
+        Sww = Sww.squeeze()[:nnyq]
+        
+        
+        Suv = np.real(Amu*np.conj(Amv))/(nnyq*df)
+        Suv = Suv.squeeze()[:nnyq]
+        
+        Suw = np.real(Amu*np.conj(Amw))/(nnyq*df)
+        Suw = Suw.squeeze()[:nnyq]
+        
+        Svw = np.real(Amv*np.conj(Amw))/(nnyq*df)
+        Svw = Svw.squeeze()[:nnyq]
+        
+        offset = np.sum(fm<=0.1)
+                    
+        uumax = np.argmax(Suu[(fm>0.1) & (fm < 0.7)]) + offset
+        
+        widthratiolow = 2.333
+        widthratiohigh = 1.4
+        fmmax = fm[uumax]
+        waverange = np.arange(uumax - (fmmax/widthratiolow)//df,uumax + (fmmax/widthratiohigh)//df).astype(int)
+        
+        interprange = np.arange(1,np.nanargmin(np.abs(fm - 1))).astype(int)
+        
+        interprangeW = np.arange(1,np.nanargmin(np.abs(fm-1))).astype(int)
+        
+        interprange = interprange[(interprange>=0) & (interprange<nnyq)]
+        waverange = waverange[(waverange>=0) & (waverange<nnyq)]
+        interprangeW = interprangeW[(interprangeW >= 0) & (interprangeW < nnyq)]
+        
+        Suu_turb = Suu[interprange]
+        fmuu = fm[interprange]
+        Suu_turb = np.delete(Suu_turb,waverange-interprange[0])
+        fmuu = np.delete(fmuu,waverange-interprange[0])
+        Suu_turb = Suu_turb[fmuu>0]
+        fmuu = fmuu[fmuu>0]
+        
+        Svv_turb = Svv[interprange]
+        fmvv = fm[interprange]
+        Svv_turb = np.delete(Svv_turb,waverange-interprange[0])
+        fmvv = np.delete(fmvv,waverange-interprange[0])
+        Svv_turb = Svv_turb[fmvv>0]
+        fmvv = fmvv[fmvv>0]
+        
+        Sww_turb = Sww[interprangeW]
+        fmww = fm[interprangeW]
+        Sww_turb = np.delete(Sww_turb,waverange-interprangeW[0])
+        fmww = np.delete(fmww,waverange-interprangeW[0])
+        Sww_turb = Sww_turb[fmww>0]
+        fmww = fmww[fmww>0]
+        
+        
+        #Linear interpolation over turbulent spectra
+        F = np.log(fmuu)
+        S = np.log(Suu_turb)
+        Puu = np.polyfit(F,S,deg = 1)
+        Puuhat = np.exp(np.polyval(Puu,np.log(fm)))
+        
+        F = np.log(fmvv)
+        S = np.log(Svv_turb)
+        Pvv = np.polyfit(F,S,deg = 1)
+        Pvvhat = np.exp(np.polyval(Pvv,np.log(fm)))
+                                  
+        F = np.log(fmww)
+        S = np.log(Sww_turb)
+        Pww = np.polyfit(F,S,deg = 1)
+        Pwwhat = np.exp(np.polyval(Pww,np.log(fm)))
+        
+        #Wave spectra
+        Suu_wave = Suu[waverange] - Puuhat[waverange]
+        Svv_wave = Svv[waverange] - Pvvhat[waverange]
+        Sww_wave = Sww[waverange] - Pwwhat[waverange]
+        
+        #Wave Fourier components
+        Amu_wave = np.sqrt((Suu_wave+0j)*(df))
+        Amv_wave = np.sqrt((Svv_wave+0j))*(df)
+        Amww_wave = np.sqrt((Sww_wave+0j)*(df))
+        
+        #Wave Magnitudes
+        Um_wave = np.sqrt(np.real(Amu_wave)**2 + np.imag(Amu_wave)**2)
+        Vm_wave = np.sqrt(np.real(Amv_wave)**2 + np.imag(Amv_wave)**2)
+        wm_wave = np.sqrt(np.real(Amww_wave)**2 + np.imag(Amww_wave)**2)
+        
+        #Wave reynolds stress
+        uw_wave = np.nansum(Um_wave*wm_wave*np.cos(Wph[waverange]-Uph[waverange]))
+        uv_wave =  np.nansum(Um_wave*Vm_wave*np.cos(Vph[waverange]-Uph[waverange]))
+        vw_wave = np.nansum(Vm_wave*wm_wave*np.cos(Wph[waverange]-Vph[waverange]))
+        
+        uu_wave = np.nansum(Suu_wave*df)
+        vv_wave = np.nansum(Svv_wave*df)
+        ww_wave = np.nansum(Sww_wave*df)
+        
+                        
+        #Full reynolds stresses
+        uu = np.nansum(np.real(Suu)*df)
+        uv = np.nansum(np.real(Suv)*df)
+        uw = np.nansum(np.real(Suw)*df)
+        vv = np.nansum(np.real(Svv)*df)
+        vw = np.nansum(np.real(Svw)*df)
+        ww = np.nansum(np.real(Sww)*df)
+        
+        #Turbulent reynolds stresses
+        
+        upup = uu - uu_wave
+        vpvp = vv - vv_wave
+        wpwp = ww - ww_wave
+        upwp = uw - uw_wave
+        upvp = uv - uv_wave
+        vpwp = vw - vw_wave
+        
+        #Turbulent reynolds stresses
+        waveturb['uw'][ii] = upwp
+        waveturb['vw'][ii] = vpwp
+        waveturb['uv'][ii] = upvp
+        waveturb['uu'][ii] = upup
+        waveturb['vv'][ii] = vpvp
+        waveturb['ww'][ii] = wpwp
+    
+        
+        #Wave reynolds stresses
+        waveturb['uw_wave'][ii] = uw_wave
+        waveturb['vw_wave'][ii] = vw_wave
+        waveturb['uv_wave'][ii] = uv_wave
+        waveturb['uu_wave'][ii] = uu_wave
+        waveturb['vv_wave'][ii] = vv_wave
+        waveturb['ww_wave'][ii] = ww_wave
+                
+    return waveturb      
