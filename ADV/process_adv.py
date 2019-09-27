@@ -1,38 +1,21 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Tue May  1 12:18:40 2018
-
-@author: gegan
-"""
 #Packages
-import os
-parentDir = os.path.abspath(os.path.join(os.getcwd(), os.pardir))
-
-import sys
-sys.path.append(parentDir + '/General/')
-
 import advfuncs
 import datetime
 import glob
-from mylib import naninterp
 import numpy as np
-import scipy.interpolate
-import scipy.signal as sig
-import scipy.io as sio
+import os
 import pandas as pd
-import wavefuncs_adv
 
 np.seterr(divide='ignore', invalid='ignore')
 
 #Variables to set (input)
 
-#x_heading = 270. #Fixed ADV, don't need to rotate to ENU
+#x_heading = 270. #Only specify if it's a flex head. Don't need to rotate for fixed
 #vertical_orientation = 'down'
-corr_min = 30.
-doffu = .15
-doffp = .3
-rho = 1020
+corr_min = 30. #Minimum beam correlation
+doffu = .15 #Sampling height
+doffp = .3 #Pressure sensor height
+rho = 1020 #Water density
 
 #Directory where all deployment files are (input)
 path = '/Users/gegan/Documents/Python/Research/Deployment1/ADVData/1316_4913'
@@ -107,7 +90,7 @@ for ii in range(len(datavhd)):
     adv['press'] = datadat.loc[rowidx,14].values
 
 
-    ##Rotating XYZ to earth coordinates
+    ##Rotating XYZ to earth coordinates -- do this if non-fixed ADV head
     #if vertical_orientation == 'up':
     #    roll = 180
     #    pitch = 0
@@ -131,28 +114,29 @@ for ii in range(len(datavhd)):
     
 
     #Now removing values outside a few standard deviations
-    badidxlow = (adv['velx'] < (np.nanmedian(adv['velx']) - 5*np.nanstd(adv['velx'])))
+    K = 4
+    badidxlow = (adv['velx'] < (np.nanmedian(adv['velx']) - K*np.nanstd(adv['velx'])))
     
-    badidxhigh = (adv['velx'] > (np.nanmedian(adv['velx']) + 5*np.nanstd(adv['velx']))) 
+    badidxhigh = (adv['velx'] > (np.nanmedian(adv['velx']) + K*np.nanstd(adv['velx']))) 
     
     adv['velx'][badidxlow] = np.NaN
     adv['velx'][badidxhigh] = np.NaN
     
-    badidxlow = (adv['vely'] < (np.nanmedian(adv['vely']) - 5*np.nanstd(adv['vely'])))
+    badidxlow = (adv['vely'] < (np.nanmedian(adv['vely']) - K*np.nanstd(adv['vely'])))
     
-    badidxhigh = (adv['vely'] > (np.nanmedian(adv['vely']) + 5*np.nanstd(adv['vely']))) 
+    badidxhigh = (adv['vely'] > (np.nanmedian(adv['vely']) + K*np.nanstd(adv['vely']))) 
     
     adv['vely'][badidxlow] = np.NaN
     adv['vely'][badidxhigh] = np.NaN
     
-    badidxlow = (adv['velz'] < (np.nanmedian(adv['velz']) - 5*np.nanstd(adv['velz'])))
+    badidxlow = (adv['velz'] < (np.nanmedian(adv['velz']) - K*np.nanstd(adv['velz'])))
     
-    badidxhigh = (adv['velz'] > (np.nanmedian(adv['velz']) + 5*np.nanstd(adv['velz']))) 
+    badidxhigh = (adv['velz'] > (np.nanmedian(adv['velz']) + K*np.nanstd(adv['velz']))) 
     
     adv['velz'][badidxlow] = np.NaN
     adv['velz'][badidxhigh] = np.NaN
     
-    #Removing values above a certain magnitude--adjust for each data set.
+    #Removing values above a certain magnitude--adjust for each data set
     badmag = 0.5
     adv['velx'][np.abs(adv['velx'])>badmag] = np.NaN
     adv['vely'][np.abs(adv['vely'])>badmag] = np.NaN
@@ -160,53 +144,27 @@ for ii in range(len(datavhd)):
     
     
 
-    #%% Low-pass filtering the velocity and pressure data and placing in separate 
-    # structure adv_filt 
-
-    fc = 0.1
-
-    adv['velxfilt'] = advfuncs.lpf(adv['velx'],
-            gen['fs'],fc) 
-    
-    adv['velyfilt'] = advfuncs.lpf(adv['vely'],
-            gen['fs'],fc) 
-    
-    adv['velzfilt'] = advfuncs.lpf(adv['velz'],
-            gen['fs'],fc) 
-    
-    adv['pressfilt'] = advfuncs.lpf(adv['press'],
-            gen['fs'],fc) 
-
-    #%% Calculating principle axis rotation
+    #%% Calculating principle axis rotation. Should ideally use constant theta 
+    #from ADCP data
  
     adv['theta'] = advfuncs.pa_theta(adv['velx'],adv['vely'])
     
     adv['velmaj'], adv['velmin'] = advfuncs.pa_rotation(
             adv['velx'],adv['vely'],adv['theta'])
 
-    adv['velmajfilt'], adv['velminfilt'] = advfuncs.pa_rotation(
-            adv['velxfilt'],adv['velyfilt'],adv['theta'])
-    
-
     #%% Wave statistics and spectra
 
     fcw = gen['fs']/8
     nfft = 14*60*gen['fs']/3
 
-
-    WaveStats = wavefuncs_adv.wave_stats_spectra(adv['velmaj'],adv['velmin'],
+    WaveStats = advfuncs.wave_stats_spectra(adv['velmaj'],adv['velmin'],
                 adv['press'],nfft,doffu,doffp,gen['fs'],fcw,rho,0)
     
     # Benilov wave/turbulence decomposition  
-
-    Benilov = wavefuncs_adv.benilov(adv['velmaj'],adv['velmin'],adv['velz'],
+    Benilov = advfuncs.benilov(adv['velmaj'],adv['velmin'],adv['velz'],
               adv['press'],doffp,gen['fs'],gen['fs']/8,rho)
 
-    #Phase method wave/turbulence decomposition
-    Phase = wavefuncs_adv.bm_phase(adv,gen['fs'])
     
     np.save(savepath + 'adv_' + str(ii) + '.npy',adv)
     np.save(savepath + 'benilov_' + str(ii) + '.npy',Benilov)
-    np.save(savepath + 'phase_' + str(ii) + '.npy',Phase)
     np.save(savepath + 'wavestats_' + str(ii) + '.npy',WaveStats)
-
